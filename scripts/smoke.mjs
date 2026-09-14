@@ -59,14 +59,23 @@ for (let step = 0; step < 24; step += 1) {
 }
 history.sort((left, right) => left.observed_at - right.observed_at);
 
-const photo = { ...measurement('camera', {}, 40), kind: 'photo', event_id: 'photo-1' };
+// Two photo sources, as the live archive has. The API lists the older one
+// first, so taking the first match would show a stale photo.
+const oldPhoto = {
+  ...measurement('acceptance', {}, 14_400),
+  kind: 'photo',
+  event_id: 'photo-old',
+};
+const newPhoto = { ...measurement('camera', {}, 40), kind: 'photo', event_id: 'photo-new' };
+
 const latest = {
   device_id: 'home',
   last_seen: NOW - 30,
   items: [
     measurement('cpu', { cpu_temperature_c: 65.9 }),
     measurement('agent', { queued: 1, bytes: 236, dropped: 36, oldest_age_seconds: 0.4 }),
-    photo,
+    oldPhoto,
+    newPhoto,
   ],
 };
 
@@ -153,7 +162,16 @@ function makeWindow(hash, session) {
         ],
       });
     }
-    if (url.pathname === '/v1/photos') return json({ items: [photo], next_cursor: null });
+    if (url.pathname === '/v1/photos') {
+      const start = Number(url.searchParams.get('start'));
+      const end = Number(url.searchParams.get('end'));
+      return json({
+        items: [oldPhoto, newPhoto].filter(
+          (item) => item.observed_at >= start && item.observed_at <= end,
+        ),
+        next_cursor: null,
+      });
+    }
     if (url.pathname.startsWith('/v1/photos/')) {
       return new window.Response(new window.Blob([new Uint8Array([255, 216, 255, 217])]), {
         headers: { 'Content-Type': 'image/jpeg' },
@@ -204,6 +222,12 @@ const settle = async (rounds = 60) => {
   check(
     'photo shown through a blob URL',
     root.querySelector('.photo__image')?.getAttribute('src') === 'blob:smoke',
+  );
+  check(
+    'overview shows the newest photo, not the first listed',
+    calls.some((call) => call.startsWith('/v1/photos/photo-new')) &&
+      !calls.some((call) => call.startsWith('/v1/photos/photo-old')),
+    calls.filter((call) => call.startsWith('/v1/photos/')).join(', '),
   );
   check(
     'sections offered',
@@ -260,7 +284,7 @@ const settle = async (rounds = 60) => {
 // ---- photo viewer -------------------------------------------------------
 
 {
-  const { window, errors, restoreConsole } = makeWindow('#/photos', true);
+  const { window, calls, errors, restoreConsole } = makeWindow('#/photos', true);
   await settle();
   const root = window.document.querySelector('#app');
 
@@ -269,6 +293,15 @@ const settle = async (rounds = 60) => {
     'photo displayed',
     root.querySelector('.photo__image')?.getAttribute('src') === 'blob:smoke',
   );
+  // The first JPEG fetched must be the newest one; prefetching pulls the
+  // neighbour in afterwards, so only the first request proves the starting point.
+  const fetched = calls.filter((call) => call.startsWith('/v1/photos/'));
+  check(
+    'viewer opens on the newest photo',
+    fetched[0]?.startsWith('/v1/photos/photo-new') === true,
+    fetched.join(', '),
+  );
+  check('position counted within the day', root.textContent.includes('2 of 2'));
   const buttons = [...root.querySelectorAll('.photo__nav button')].map(
     (button) => button.textContent,
   );

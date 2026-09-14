@@ -68,13 +68,22 @@ function photo(observedAt: number): StoredEvent {
   };
 }
 
+/**
+ * Two photo sources, as the live archive has: a leftover acceptance photo and
+ * the camera. The API lists the older one first, so anything that takes the
+ * first match shows a stale photo.
+ */
+const OLD_PHOTO = { ...photo(NOW - 14_400), source: 'acceptance' };
+const NEW_PHOTO = { ...photo(NOW - 40), source: 'camera' };
+
 const LATEST = {
   device_id: 'home',
   last_seen: NOW - 30,
   items: [
     measurement('cpu', { cpu_temperature_c: 65.9 }),
     measurement('agent', { queued: 1, bytes: 236, dropped: 36, oldest_age_seconds: 0.4 }),
-    photo(NOW - 40),
+    OLD_PHOTO,
+    NEW_PHOTO,
   ],
 };
 
@@ -118,9 +127,9 @@ function makeFetch() {
     if (request.path === '/v1/photos') {
       const start = Number(request.query.get('start'));
       const end = Number(request.query.get('end'));
-      const candidate = photo(NOW - 40);
-      const items =
-        candidate.observed_at >= start && candidate.observed_at <= end ? [candidate] : [];
+      const items = [OLD_PHOTO, NEW_PHOTO].filter(
+        (item) => item.observed_at >= start && item.observed_at <= end,
+      );
       return new Response(JSON.stringify({ items, next_cursor: null }), {
         headers: { 'Content-Type': 'application/json' },
       });
@@ -222,6 +231,17 @@ describe('dashboard', () => {
     expect(image?.getAttribute('src')).toBe('blob:fake');
   });
 
+  it('shows the newest photo, not the first one the API lists', async () => {
+    const { seen } = mount(true);
+    await settle();
+
+    const requested = seen.filter((request) => request.path.startsWith('/v1/photos/'));
+    expect(requested.map((request) => request.path)).toContain(`/v1/photos/${NEW_PHOTO.event_id}`);
+    expect(requested.map((request) => request.path)).not.toContain(
+      `/v1/photos/${OLD_PHOTO.event_id}`,
+    );
+  });
+
   it('reports a silent device when nothing arrived for hours', async () => {
     const stale = { ...LATEST, last_seen: NOW - 20_000 };
     const original = LATEST.last_seen;
@@ -274,7 +294,8 @@ describe('photo viewer', () => {
     expect(root.querySelector<HTMLImageElement>('.photo__image')?.getAttribute('src')).toBe(
       'blob:fake',
     );
-    expect(root.textContent).toContain('1 of 1');
+    // Opens on the newest of the day's two photos, not the first one listed.
+    expect(root.textContent).toContain('2 of 2');
     // Older on the left, newer on the right, in step with the arrows.
     const buttons = [...root.querySelectorAll('.photo__nav button')].map(
       (button) => button.textContent,

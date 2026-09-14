@@ -12,6 +12,23 @@ import { localDayKey, shiftDayKey } from './range.ts';
 
 export type DayLoader = (dayKey: string) => Promise<StoredEvent[]>;
 
+/**
+ * The most recently taken photo in a `/v1/latest` response.
+ *
+ * That endpoint returns the newest event of every (kind, source) pair, so more
+ * than one photo comes back whenever the archive holds more than one photo
+ * source. The order of the array is not the order of time, so the newest one
+ * has to be chosen by `observed_at` rather than taken as the first match.
+ */
+export function newestPhoto(items: StoredEvent[]): StoredEvent | null {
+  let newest: StoredEvent | null = null;
+  for (const item of items) {
+    if (item.kind !== 'photo') continue;
+    if (!newest || item.observed_at > newest.observed_at) newest = item;
+  }
+  return newest;
+}
+
 export interface NavigatorOptions {
   /** Loads one local calendar day, ascending by observed_at. */
   load: DayLoader;

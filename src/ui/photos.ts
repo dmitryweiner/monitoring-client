@@ -9,7 +9,7 @@
 
 import { PHOTO_RETENTION_DAYS, SECONDS_PER_DAY } from '../config.ts';
 import type { StoredEvent } from '../api/types.ts';
-import { PhotoNavigator } from '../model/photoNav.ts';
+import { PhotoNavigator, newestPhoto } from '../model/photoNav.ts';
 import { dayKeyToTimestamp, localDayRange } from '../model/range.ts';
 import { describeError, isAbort, type AppContext, type View } from './context.ts';
 import { clear, el, field } from './dom.ts';
@@ -139,7 +139,7 @@ export class PhotosView implements View {
   private async start(): Promise<StoredEvent | null> {
     try {
       const latest = await this.context.api.latest(this.controller?.signal);
-      const photo = latest.items.find((item) => item.kind === 'photo');
+      const photo = newestPhoto(latest.items);
       if (photo) return this.navigator.select(photo);
     } catch (error) {
       if (isAbort(error)) throw error;

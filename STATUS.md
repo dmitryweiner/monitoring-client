@@ -7,17 +7,26 @@ What has been built and what was actually verified. The target is described in
 
 Milestones 1 to 7 of the plan are done: scaffold, API client and
 authentication, overview, charts, photo viewer, the backend origin change, and
-the deployment. The application builds, type-checks, passes 85 tests, and the
+the deployment. The application builds, type-checks, passes 89 tests, and the
 built bundle has been driven through all three pages.
 
 | Area | State |
 | --- | --- |
 | Build | Vite 7, TypeScript strict, output committed to `docs/`, `base` `/monitoring-client/` |
 | Bundle | 89.5 kB JavaScript (36.2 kB gzipped), 8.5 kB CSS; no source map in the committed build |
-| Tests | 85 passing across 7 files: model, API client, session, and views in a DOM |
-| Bundle check | `npm run smoke` drives the built bundle through all three pages: 26 checks passing |
+| Tests | 89 passing across 7 files: model, API client, session, and views in a DOM |
+| Bundle check | `npm run smoke` drives the built bundle through all three pages: 29 checks passing |
 | Dependencies | uPlot at runtime; Vite, TypeScript, Vitest, Prettier, happy-dom for development. `npm audit` reports 0 vulnerabilities |
 | Deployment | Live at https://dmitryweiner.github.io/monitoring-client/ from `main:/docs` |
+
+## Fixed after review
+
+The overview and the photo viewer opened on a four-hour-old photo. `/v1/latest`
+returns the newest event of every (kind, source) pair, and the archive has two
+photo sources: the camera and a leftover `acceptance` photo from the backend
+acceptance test. The API lists the older source first, and the client took the
+first match instead of the latest by time. Both views now select by
+`observed_at`. Tests reproduce the real ordering and fail against the old code.
 
 ## One departure from the plan
 

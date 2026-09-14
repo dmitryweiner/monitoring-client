@@ -16,6 +16,7 @@ import {
 import type { LatestResponse, StoredEvent } from '../api/types.ts';
 import { unitForMetric } from '../model/units.ts';
 import { humanizeMetric } from '../model/series.ts';
+import { newestPhoto } from '../model/photoNav.ts';
 import { clear, el, field } from './dom.ts';
 import { formatAge, formatBytes, formatLocal, formatUtc } from './format.ts';
 import { describeError, isAbort, type AppContext, type View } from './context.ts';
@@ -124,7 +125,7 @@ export class DashboardView implements View {
 
   private render(latest: LatestResponse, cameraErrors: StoredEvent[], now: number): void {
     const measurements = latest.items.filter((item) => item.kind === 'measurement');
-    const photo = latest.items.find((item) => item.kind === 'photo') ?? null;
+    const photo = newestPhoto(latest.items);
 
     this.renderStatus(latest, now);
     this.renderWarnings(measurements, cameraErrors, now);

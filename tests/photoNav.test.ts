@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredEvent } from '../src/api/types.ts';
-import { PhotoNavigator } from '../src/model/photoNav.ts';
+import { PhotoNavigator, newestPhoto } from '../src/model/photoNav.ts';
 import { localDayKey } from '../src/model/range.ts';
 
 /** Local noon of a day offset from a fixed base date, so tests ignore the time zone. */
@@ -173,5 +173,29 @@ describe('peek', () => {
     await navigator.select(photos[1]!);
     expect((await navigator.peek(-1))?.event_id).toBe(photos[0]!.event_id);
     expect(navigator.photo?.event_id).toBe(photos[1]!.event_id);
+  });
+});
+
+describe('newestPhoto', () => {
+  it('ignores measurements', () => {
+    const measurementItem = { ...photo(localTime(0, 9)), kind: 'measurement' as const };
+    expect(newestPhoto([measurementItem])).toBeNull();
+  });
+
+  it('returns null when nothing is a photo', () => {
+    expect(newestPhoto([])).toBeNull();
+  });
+
+  /**
+   * /v1/latest returns the newest event of every (kind, source) pair, so a
+   * second photo source puts two photos in the array and the array order is
+   * not the order of time. Taking the first match showed a four-hour-old test
+   * photo instead of the current camera view.
+   */
+  it('picks the most recent photo when an older source comes first', () => {
+    const older = { ...photo(localTime(0, 11)), source: 'acceptance' };
+    const newer = { ...photo(localTime(0, 15)), source: 'camera' };
+    expect(newestPhoto([older, newer])?.event_id).toBe(newer.event_id);
+    expect(newestPhoto([newer, older])?.event_id).toBe(newer.event_id);
   });
 });
