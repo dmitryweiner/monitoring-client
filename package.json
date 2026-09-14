@@ -1,0 +1,28 @@
+{
+  "name": "monitoring-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Web client for the home monitoring Cloudflare Worker API",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "format": "prettier --write \"src/**/*.{ts,css}\" \"tests/**/*.ts\" \"*.{ts,html,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,css}\" \"tests/**/*.ts\" \"*.{ts,html,json}\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.4",
+    "happy-dom": "^20.14.5",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9",
+    "vitest": "^5.0.0"
+  },
+  "dependencies": {
+    "uplot": "^1.6.32"
+  }
+}

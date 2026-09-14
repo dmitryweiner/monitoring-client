@@ -1,0 +1,92 @@
+# Project status — 2026-09-14
+
+What has been built and what was actually verified. The target is described in
+[PLAN.md](PLAN.md); this file records facts, not intentions.
+
+## Done
+
+Milestones 1 to 6 of the plan are implemented: scaffold, API client and
+authentication, overview, charts, photo viewer, and the backend origin change.
+The application builds, type-checks and passes 85 tests.
+
+| Area | State |
+| --- | --- |
+| Build | Vite 7, TypeScript strict, output committed to `docs/`, `base` `/monitoring-client/` |
+| Bundle | 89.5 kB JavaScript (36.2 kB gzipped), 8.5 kB CSS; no source map in the committed build |
+| Tests | 85 passing across 7 files: model, API client, session, and views in a DOM |
+| Dependencies | uPlot at runtime; Vite, TypeScript, Vitest, Prettier, happy-dom for development. `npm audit` reports 0 vulnerabilities |
+| Deployment | Not yet pushed; GitHub Pages not yet switched on |
+
+## Verified against the live Worker
+
+Checked on 2026-09-14 from the Orange Pi with curl, using the existing
+`secrets/admin.key` of the `monitoring` project. No key or session token was
+written to any file.
+
+- `GET /healthz` returns `{"status":"ok"}`.
+- `POST /v1/session` returns a 64-character session key and an expiry.
+- `GET /v1/latest` returns four sources: `cpu` with `cpu_temperature_c`,
+  `agent` with `queued`, `bytes`, `dropped` and `oldest_age_seconds`, a
+  `camera` measurement with `status=error` and no values, and the newest photo.
+  There is also a leftover `acceptance` source with `test_value`, from the
+  earlier end-to-end test. The client shows it like any other metric.
+- `GET /v1/measurements` over three hours returned 36 events, 18 each from
+  `cpu` and `agent`, matching the 10-minute interval, with `next_cursor` null.
+- `GET /v1/measurements/aggregate` for `cpu_temperature_c` over seven days with
+  `bucket_seconds=3600` returned 10 buckets, each with mean, minimum and
+  maximum. Only about ten hours of history exists so far.
+- `GET /v1/photos` over two days returned 33 items; the newest JPEG downloaded
+  as 37 275 bytes with `Content-Type: image/jpeg`.
+- `DELETE /v1/session` returned 204.
+
+## Worker change
+
+`ALLOWED_ORIGINS` in `monitoring/cloud/wrangler.jsonc` was changed from the
+empty string to `https://dmitryweiner.github.io`, and the Worker was
+redeployed. This is the only backend change the client needs.
+
+- Deployed version: `31173b5d-9f56-4c9e-a390-aaad818155b1`.
+- Only the one variable changed; `DEVICE_ID`, the D1 and R2 bindings, the rate
+  limits and the cron trigger are unchanged, and `DEVICE_HASH`/`ADMIN_HASH`
+  survived the deploy.
+- A preflight from `https://dmitryweiner.github.io` answers 204 with
+  `Access-Control-Allow-Origin`, `-Credentials`, `-Methods` and `-Headers`.
+- A preflight from another origin is refused with 403.
+- Signing in and reading `/v1/latest` with the Pages origin both return 200
+  with the correct CORS headers, which confirms the secrets are still in place.
+- `localhost` was deliberately left out of the list. Development goes through
+  the Vite proxy, which removes the `Origin` header, so no local origin needs
+  to be trusted by the production Worker.
+
+## Not verified
+
+- **No browser run.** This machine is the headless Orange Pi and has no
+  browser installed, so nothing has been rendered on a real screen. The views
+  are covered by DOM tests under happy-dom, and the chart panels are asserted
+  against a uPlot stub, which checks the wiring and the panel layout but not
+  drawing, fonts, colour or the responsive layout at phone width.
+- **GitHub Pages.** Not pushed and not enabled, so the live URL does not work
+  yet and the published Content-Security-Policy has not been exercised by a
+  browser.
+- **Long ranges with real history.** The archive only reaches back about ten
+  hours, so the 30- and 90-day views have been exercised against the API but
+  not against data that fills them.
+- **Retention edges.** Stepping past the oldest photo and the behaviour when a
+  photo is deleted between listing and fetching are covered by unit tests with
+  synthetic data, not observed against the real archive.
+
+## Notes for whoever continues
+
+- The `monitoring` working copy was being modified by another process during
+  this session: `STATUS.md`, `docs/HANDOFF.md`, `docs/NETWORK.md`, `.gitignore`
+  and new files under `deploy/` and `docs/` all changed without any action from
+  this work. Only `cloud/wrangler.jsonc` was touched here, and it was clean in
+  git beforehand. That change is uncommitted in the `monitoring` repository.
+- Sensor support for BMP280 and DHT11 is the second part of the work. No code
+  change should be needed for them to plot: series are discovered from the data
+  and the unit comes from the metric name, with rules already in place for
+  `*_c`, `*_hpa`, `*_pct` and `humidity`. Their real metric names are unknown,
+  so the inference rules should be checked once the agent sends them.
+- At most three series share one chart panel, which is the limit the colour
+  palette was validated for. A unit with more series is split across further
+  panels automatically.

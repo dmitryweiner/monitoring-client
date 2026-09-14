@@ -1,0 +1,3 @@
+docs/
+# Documentation is hand-wrapped prose; Prettier only pads the tables.
+*.md
