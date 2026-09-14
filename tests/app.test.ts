@@ -275,9 +275,11 @@ describe('photo viewer', () => {
       'blob:fake',
     );
     expect(root.textContent).toContain('1 of 1');
-    const buttons = [...root.querySelectorAll('button')].map((button) => button.textContent);
-    expect(buttons).toContain('← Previous');
-    expect(buttons).toContain('Next →');
+    // Older on the left, newer on the right, in step with the arrows.
+    const buttons = [...root.querySelectorAll('.photo__nav button')].map(
+      (button) => button.textContent,
+    );
+    expect(buttons.slice(0, 4)).toEqual(['Oldest', '← Previous', 'Next →', 'Newest']);
   });
 
   it('limits the date picker to the retained archive', async () => {

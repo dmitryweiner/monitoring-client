@@ -104,11 +104,12 @@ export class PhotosView implements View {
       if (timestamp !== null) void this.go(() => this.navigator.jumpTo(timestamp));
     });
 
+    // Left to right runs from older to newer, matching the arrows between them.
     this.navHost.append(
-      this.newestButton,
+      this.oldestButton,
       this.previousButton,
       this.nextButton,
-      this.oldestButton,
+      this.newestButton,
       el('span', { class: 'filters__spacer' }),
       this.dateInput,
       this.downloadButton,

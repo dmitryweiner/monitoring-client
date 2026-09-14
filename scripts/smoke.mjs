@@ -269,8 +269,15 @@ const settle = async (rounds = 60) => {
     'photo displayed',
     root.querySelector('.photo__image')?.getAttribute('src') === 'blob:smoke',
   );
-  const buttons = [...root.querySelectorAll('button')].map((button) => button.textContent);
-  check('navigation offered', buttons.includes('← Previous') && buttons.includes('Next →'));
+  const buttons = [...root.querySelectorAll('.photo__nav button')].map(
+    (button) => button.textContent,
+  );
+  check(
+    'navigation ordered from older to newer',
+    JSON.stringify(buttons.slice(0, 4)) ===
+      JSON.stringify(['Oldest', '← Previous', 'Next →', 'Newest']),
+    buttons.join(', '),
+  );
   const dateInput = root.querySelector('input[type="date"]');
   check('date picker bounded to the archive', Boolean(dateInput?.min && dateInput?.max));
   check('no error in the viewer', errors.length === 0, errors.slice(0, 2).join(' | '));

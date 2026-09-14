@@ -88,6 +88,37 @@ repository and applied with `wrangler deploy`. Without it the browser's
 preflight is refused and nothing loads. Note that the value is scheme and host
 only, so it covers every GitHub Pages site of that account.
 
+## Where the access key comes from
+
+There is no registration: the Worker has no user accounts. The key was
+generated once while the backend was set up and lives in the `monitoring`
+project, next to this one:
+
+```
+monitoring/secrets/admin.key
+```
+
+It is 43 characters of url-safe base64, that is 32 random bytes, with
+permissions 0600, and `secrets/` is excluded from Git. Open the file and paste
+the line into the sign-in form.
+
+Cloudflare holds only the SHA-256 of that key, as the Worker secret
+`ADMIN_HASH`, so the key itself cannot be read back out of Cloudflare. **That
+file is the only copy.** Losing it means issuing a new key.
+
+To replace the key, from the `monitoring` checkout:
+
+```sh
+head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n' > secrets/admin.key
+chmod 600 secrets/admin.key
+printf '%s' "$(cat secrets/admin.key)" | sha256sum | cut -d' ' -f1 \
+  | npx wrangler secret put ADMIN_HASH --config cloud/wrangler.jsonc
+```
+
+Changing `ADMIN_HASH` invalidates every session that was issued against the old
+key, including the one stored in the browser, so the next page load asks for
+the new key. The device upload token is a separate secret and is not affected.
+
 ## How access works
 
 The access key is typed once and exchanged at `POST /v1/session` for a session
