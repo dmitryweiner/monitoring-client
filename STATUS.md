@@ -19,6 +19,15 @@ built bundle has been driven through all three pages.
 | Dependencies | uPlot at runtime; Vite, TypeScript, Vitest, Prettier, happy-dom for development. `npm audit` reports 0 vulnerabilities |
 | Deployment | Live at https://dmitryweiner.github.io/monitoring-client/ from `main:/docs` |
 
+## One departure from the plan
+
+PLAN.md proposed a single plot with one y-scale per unit. That was changed to a
+column of separate panels, one per unit, sharing the time axis and a single
+crosshair. Two y-scales on one plot make the alignment of the two scales
+arbitrary and imply a correlation that is not in the data. The result still
+answers the requirement of seeing every parameter in one picture, and the
+panels behave as one chart.
+
 ## Verified against the live Worker
 
 Checked on 2026-09-14 from the Orange Pi with curl, using the existing
