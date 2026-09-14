@@ -5,17 +5,19 @@ What has been built and what was actually verified. The target is described in
 
 ## Done
 
-Milestones 1 to 6 of the plan are implemented: scaffold, API client and
-authentication, overview, charts, photo viewer, and the backend origin change.
-The application builds, type-checks and passes 85 tests.
+Milestones 1 to 7 of the plan are done: scaffold, API client and
+authentication, overview, charts, photo viewer, the backend origin change, and
+the deployment. The application builds, type-checks, passes 85 tests, and the
+built bundle has been driven through all three pages.
 
 | Area | State |
 | --- | --- |
 | Build | Vite 7, TypeScript strict, output committed to `docs/`, `base` `/monitoring-client/` |
 | Bundle | 89.5 kB JavaScript (36.2 kB gzipped), 8.5 kB CSS; no source map in the committed build |
 | Tests | 85 passing across 7 files: model, API client, session, and views in a DOM |
+| Bundle check | `npm run smoke` drives the built bundle through all three pages: 26 checks passing |
 | Dependencies | uPlot at runtime; Vite, TypeScript, Vitest, Prettier, happy-dom for development. `npm audit` reports 0 vulnerabilities |
-| Deployment | Not yet pushed; GitHub Pages not yet switched on |
+| Deployment | Live at https://dmitryweiner.github.io/monitoring-client/ from `main:/docs` |
 
 ## Verified against the live Worker
 
@@ -58,16 +60,26 @@ redeployed. This is the only backend change the client needs.
   the Vite proxy, which removes the `Origin` header, so no local origin needs
   to be trusted by the production Worker.
 
+## Published
+
+- Committed and pushed to `main`; GitHub Pages enabled on `main:/docs` through
+  the GitHub API. The repository was already public.
+- https://dmitryweiner.github.io/monitoring-client/ answers 200, and both
+  hashed assets and `.nojekyll` are served correctly.
+- The committed bundle was then loaded into a DOM and driven through sign-in,
+  the overview, the chart page with a range change, and the photo viewer.
+  All 26 checks passed with no runtime error, which covers the wiring of the
+  file that actually ships.
+
 ## Not verified
 
 - **No browser run.** This machine is the headless Orange Pi and has no
-  browser installed, so nothing has been rendered on a real screen. The views
-  are covered by DOM tests under happy-dom, and the chart panels are asserted
-  against a uPlot stub, which checks the wiring and the panel layout but not
-  drawing, fonts, colour or the responsive layout at phone width.
-- **GitHub Pages.** Not pushed and not enabled, so the live URL does not work
-  yet and the published Content-Security-Policy has not been exercised by a
-  browser.
+  browser installed, so nothing has been rendered on a real screen. The DOM
+  used for the checks has no canvas, so a recording context and a `Path2D`
+  stub stand in: the panel structure, the requests and the readouts are
+  checked, but not drawing, fonts, colour, or the layout at phone width.
+  The published Content-Security-Policy has likewise never been enforced by a
+  real browser.
 - **Long ranges with real history.** The archive only reaches back about ten
   hours, so the 30- and 90-day views have been exercised against the API but
   not against data that fills them.

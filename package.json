@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
     "test": "vitest run",
+    "smoke": "node scripts/smoke.mjs",
     "test:watch": "vitest",
     "preview": "vite preview",
     "format": "prettier --write \"src/**/*.{ts,css}\" \"tests/**/*.ts\" \"*.{ts,html,json}\"",

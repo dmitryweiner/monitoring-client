@@ -41,6 +41,7 @@ for anything that talks to the API.
 ```sh
 npm run check   # TypeScript, no emit
 npm test        # Vitest
+npm run smoke   # drives the built bundle; run after npm run build
 npm run format  # Prettier
 ```
 
@@ -49,12 +50,17 @@ navigation), the API client, and the views rendered in a DOM. uPlot needs a
 real canvas, so the chart tests run against a stub and assert the panel
 layout rather than pixels.
 
+`npm run smoke` is the check on the artifact that actually ships: it loads
+`docs/assets/*.js` into a DOM, signs in, and walks all three pages against a
+stubbed API. Run it after building and before committing the output.
+
 ## Build and deploy
 
 GitHub Pages serves `main:/docs`, and the build is committed. There is no CI:
 
 ```sh
 npm run build
+npm run smoke
 git add docs
 git commit -m "Deploy"
 git push
@@ -130,5 +136,6 @@ src/api/      fetch wrapper, endpoint facade, session persistence, types
 src/model/    time ranges, series building, unit inference, photo navigation
 src/ui/       shell and routing, sign-in, overview, charts, photo viewer
 tests/        Vitest suites for the model, the client and the views
+scripts/      smoke check that runs the built bundle in a DOM
 docs/         build output, committed and served by GitHub Pages
 ```
