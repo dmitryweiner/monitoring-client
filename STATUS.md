@@ -7,15 +7,15 @@ What has been built and what was actually verified. The target is described in
 
 Milestones 1 to 7 of the plan are done: scaffold, API client and
 authentication, overview, charts, photo viewer, the backend origin change, and
-the deployment. The application builds, type-checks, passes 102 tests, and the
+the deployment. The application builds, type-checks, passes 103 tests, and the
 built bundle has been driven through all three pages.
 
 | Area | State |
 | --- | --- |
 | Build | Vite 7, TypeScript strict, output committed to `docs/`, `base` `/monitoring-client/` |
 | Bundle | 89.5 kB JavaScript (36.2 kB gzipped), 8.5 kB CSS; no source map in the committed build |
-| Tests | 102 passing across 7 files: model, API client, session, and views in a DOM |
-| Bundle check | `npm run smoke` drives the built bundle through all three pages: 39 checks passing |
+| Tests | 103 passing across 7 files: model, API client, session, and views in a DOM |
+| Bundle check | `npm run smoke` drives the built bundle through all three pages: 44 checks passing |
 | Dependencies | uPlot at runtime; Vite, TypeScript, Vitest, Prettier, happy-dom for development. `npm audit` reports 0 vulnerabilities |
 | Deployment | Live at https://dmitryweiner.github.io/monitoring-client/ from `main:/docs` |
 

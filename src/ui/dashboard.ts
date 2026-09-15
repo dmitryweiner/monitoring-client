@@ -162,8 +162,9 @@ export class DashboardView implements View {
         title: lastSeen === null ? '' : `${formatLocal(lastSeen)} · ${formatUtc(lastSeen)}`,
       }),
       el('span', { class: 'filters__spacer' }),
+      // Same action, same weight as on the chart page.
       el('button', {
-        class: 'button',
+        class: 'button button--primary',
         text: 'Refresh',
         attrs: { type: 'button' },
         on: { click: () => void this.load() },

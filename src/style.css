@@ -284,9 +284,20 @@ input[type='time'] {
   margin-bottom: 0;
 }
 
+/* Range and series selection are framed so they read as their own blocks. */
+.filters__block {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
 .filters__label {
+  flex: none;
+  min-width: 48px;
   color: var(--text-secondary);
   font-size: 12px;
+  font-weight: 600;
 }
 
 .sources {

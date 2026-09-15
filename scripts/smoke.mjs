@@ -255,6 +255,24 @@ const settle = async (rounds = 60) => {
   check('every series has a legend entry', root.querySelectorAll('.legend__item').length === 5);
   check('plots created', root.querySelectorAll('canvas').length >= 4);
 
+  const rows = [...root.querySelectorAll('.filters__row')];
+  check('four filter rows', rows.length === 4, String(rows.length));
+  check(
+    'Refresh sits on top and is coloured apart',
+    rows[0]?.querySelector('button')?.textContent === 'Refresh' &&
+      rows[0].querySelector('button').classList.contains('button--primary'),
+    rows[0]?.textContent,
+  );
+  check('layout choice comes next', rows[1]?.textContent.includes('Layout') === true);
+  check(
+    'range block framed',
+    rows[2]?.textContent.includes('Range') === true && rows[2].classList.contains('filters__block'),
+  );
+  check(
+    'series block framed',
+    rows[3]?.textContent.includes('Show') === true && rows[3].classList.contains('filters__block'),
+  );
+
   const boxes = [...root.querySelectorAll('.source input')];
   check(
     'a checkbox per series, all on by default',

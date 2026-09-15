@@ -94,9 +94,10 @@ export class ChartView implements View {
   readonly element: HTMLElement;
 
   private readonly filters = el('div', { class: 'filters filters--stack' });
-  private readonly rangeRow = el('div', { class: 'filters__row' });
+  private readonly actionRow = el('div', { class: 'filters__row' });
   private readonly layoutRow = el('div', { class: 'filters__row' });
-  private readonly seriesRow = el('div', { class: 'filters__row' });
+  private readonly rangeRow = el('div', { class: 'filters__row filters__block' });
+  private readonly seriesRow = el('div', { class: 'filters__row filters__block' });
   private readonly summary = el('span', { class: 'stat__note' });
   private readonly panelHost = el('div', {});
   private readonly hidden = readHiddenSeries();
@@ -109,10 +110,25 @@ export class ChartView implements View {
   private controller: AbortController | null = null;
 
   constructor(private readonly context: AppContext) {
-    this.filters.append(this.rangeRow, this.layoutRow, this.seriesRow);
+    this.filters.append(this.actionRow, this.layoutRow, this.rangeRow, this.seriesRow);
     this.element = el('section', {}, [this.filters, this.panelHost]);
+    this.renderActionRow();
     this.renderRangeRow();
     this.renderLayoutRow();
+  }
+
+  /** Reload, and what is currently loaded. Set apart from the choices below. */
+  private renderActionRow(): void {
+    clear(this.actionRow);
+    this.actionRow.append(
+      el('button', {
+        class: 'button button--primary',
+        text: 'Refresh',
+        attrs: { type: 'button' },
+        on: { click: () => void this.load() },
+      }),
+      this.summary,
+    );
   }
 
   mount(): void {
@@ -153,17 +169,7 @@ export class ChartView implements View {
         }),
       );
     }
-    this.rangeRow.append(
-      group,
-      this.summary,
-      el('span', { class: 'filters__spacer' }),
-      el('button', {
-        class: 'button',
-        text: 'Refresh',
-        attrs: { type: 'button' },
-        on: { click: () => void this.load() },
-      }),
-    );
+    this.rangeRow.append(el('span', { class: 'filters__label', text: 'Range' }), group);
   }
 
   /** One plot or one per unit. Changing it only redraws what is already loaded. */

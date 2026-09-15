@@ -287,6 +287,29 @@ describe('charts', () => {
     expect(root.textContent).toContain('Select all');
   });
 
+  it('puts Refresh above the choices and frames the two selection blocks', async () => {
+    window.location.hash = '#/chart';
+    const { root } = mount(true);
+    await settle();
+
+    const rows = [...root.querySelectorAll<HTMLElement>('.filters__row')];
+    expect(rows).toHaveLength(4);
+
+    const refresh = rows[0]!.querySelector('button')!;
+    expect(refresh.textContent).toBe('Refresh');
+    // Coloured so it does not read as one more choice.
+    expect(refresh.classList.contains('button--primary')).toBe(true);
+
+    expect(rows[1]!.textContent).toContain('Layout');
+    expect(rows[1]!.classList.contains('filters__block')).toBe(false);
+
+    expect(rows[2]!.textContent).toContain('Range');
+    expect(rows[2]!.classList.contains('filters__block')).toBe(true);
+
+    expect(rows[3]!.textContent).toContain('Show');
+    expect(rows[3]!.classList.contains('filters__block')).toBe(true);
+  });
+
   it('draws one plot when the combined layout is chosen', async () => {
     window.location.hash = '#/chart';
     const { root } = mount(true);
