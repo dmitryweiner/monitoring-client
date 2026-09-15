@@ -152,10 +152,10 @@ Worker was redeployed. This is the only backend change the client needs.
   this session: `STATUS.md`, `docs/HANDOFF.md`, `docs/NETWORK.md`, `.gitignore`
   and new files under `deploy/` and `docs/` all changed without any action from
   this work. Only `cloud/wrangler.jsonc` was touched here, and it was clean in
-  git beforehand. That change is committed in the local `monitoring` checkout
-  but has not been pushed, so the copy on GitHub still shows the empty value.
-  Until it is pushed, a `wrangler deploy` from a fresh clone would put the old
-  value back and the client would stop loading.
+  git beforehand. That change was committed there and has since reached GitHub,
+  so a `wrangler deploy` from a fresh clone keeps the origin the client needs.
+  Verified on 15 September: the file on `main` carries
+  `"ALLOWED_ORIGINS": "https://dmitryweiner.github.io"`.
 - Sensor support for BMP280 and DHT11 is the second part of the work. No code
   change should be needed for them to plot: series are discovered from the data
   and the unit comes from the metric name, with rules already in place for
