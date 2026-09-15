@@ -1,23 +1,53 @@
-# Project status — 2026-09-14
+# Project status — 2026-09-15
 
 What has been built and what was actually verified. The target is described in
-[PLAN.md](PLAN.md); this file records facts, not intentions.
+[PLAN.md](PLAN.md); this file records facts, not intentions. The backend it
+reads is [dmitryweiner/monitoring](https://github.com/dmitryweiner/monitoring).
 
 ## Done
 
-Milestones 1 to 7 of the plan are done: scaffold, API client and
-authentication, overview, charts, photo viewer, the backend origin change, and
-the deployment. The application builds, type-checks, passes 103 tests, and the
-built bundle has been driven through all three pages.
+Milestones 1 to 8 of the plan are done: scaffold, API client and
+authentication, overview, charts, photo viewer, the backend origin change, the
+deployment, and the review changes below. The application builds, type-checks,
+passes 103 tests, and the built bundle has been driven through all three pages.
 
 | Area | State |
 | --- | --- |
 | Build | Vite 7, TypeScript strict, output committed to `docs/`, `base` `/monitoring-client/` |
-| Bundle | 89.5 kB JavaScript (36.2 kB gzipped), 8.5 kB CSS; no source map in the committed build |
+| Bundle | 94.2 kB JavaScript (37.6 kB gzipped), 9.5 kB CSS; no source map in the committed build |
 | Tests | 103 passing across 7 files: model, API client, session, and views in a DOM |
 | Bundle check | `npm run smoke` drives the built bundle through all three pages: 44 checks passing |
 | Dependencies | uPlot at runtime; Vite, TypeScript, Vitest, Prettier, happy-dom for development. `npm audit` reports 0 vulnerabilities |
 | Deployment | Live at https://dmitryweiner.github.io/monitoring-client/ from `main:/docs` |
+
+## Changed after review — 15 September
+
+The owner reviewed the deployed site; these followed.
+
+- **Photo buttons reordered.** Newest sat on the left and Oldest on the right,
+  against the arrows between them. The row now reads Oldest, Previous, Next,
+  Newest. Home and End still mean newest and oldest.
+- **Chart layout switch.** A framed Layout block offers one chart or one per
+  unit; separate charts stays the default. The combined plot keeps the real
+  axis when the selected series share a unit, and otherwise rescales each
+  series to its own range and says so, since two y-scales on one plot would
+  imply a relationship that is not in the data. It carries at most eight
+  series, the count the palette validates for lines compared with their
+  neighbours; separate panels stay at three, the count that holds when any two
+  panels are compared. Both palettes were re-run through the validator for the
+  light and the dark surface.
+- **Series checkboxes.** A framed Show block lists every discovered series with
+  a Select all button. Everything is on until a box is cleared, the choice is
+  kept in `localStorage`, and clearing the last series of a unit drops its
+  panel while the checkbox stays so it can be brought back.
+- **Filter block rearranged.** Refresh moved to its own top row in the primary
+  colour, with the note on what is loaded beside it, because it read as one
+  more choice among the chips. Layout, Range and Show sit below it as three
+  framed blocks. The dashboard's Refresh took the same colour so one action
+  does not look like two.
+- **Documentation.** The backend repository is now linked wherever it is
+  mentioned, and the access key section says the key lives only in a local
+  checkout and never in the repository.
 
 ## Fixed after review
 
@@ -48,8 +78,9 @@ stay capped at three, the count that holds when any two panels are compared.
 ## Verified against the live Worker
 
 Checked on 2026-09-14 from the Orange Pi with curl, using the existing
-`secrets/admin.key` of the `monitoring` project. No key or session token was
-written to any file.
+`secrets/admin.key` of the backend project,
+[dmitryweiner/monitoring](https://github.com/dmitryweiner/monitoring). No key
+or session token was written to any file.
 
 - `GET /healthz` returns `{"status":"ok"}`.
 - `POST /v1/session` returns a 64-character session key and an expiry.
@@ -69,9 +100,11 @@ written to any file.
 
 ## Worker change
 
-`ALLOWED_ORIGINS` in `monitoring/cloud/wrangler.jsonc` was changed from the
-empty string to `https://dmitryweiner.github.io`, and the Worker was
-redeployed. This is the only backend change the client needs.
+`ALLOWED_ORIGINS` in
+[`cloud/wrangler.jsonc`](https://github.com/dmitryweiner/monitoring/blob/main/cloud/wrangler.jsonc)
+of [dmitryweiner/monitoring](https://github.com/dmitryweiner/monitoring) was
+changed from the empty string to `https://dmitryweiner.github.io`, and the
+Worker was redeployed. This is the only backend change the client needs.
 
 - Deployed version: `31173b5d-9f56-4c9e-a390-aaad818155b1`.
 - Only the one variable changed; `DEVICE_ID`, the D1 and R2 bindings, the rate
@@ -119,7 +152,10 @@ redeployed. This is the only backend change the client needs.
   this session: `STATUS.md`, `docs/HANDOFF.md`, `docs/NETWORK.md`, `.gitignore`
   and new files under `deploy/` and `docs/` all changed without any action from
   this work. Only `cloud/wrangler.jsonc` was touched here, and it was clean in
-  git beforehand. That change is uncommitted in the `monitoring` repository.
+  git beforehand. That change is committed in the local `monitoring` checkout
+  but has not been pushed, so the copy on GitHub still shows the empty value.
+  Until it is pushed, a `wrangler deploy` from a fresh clone would put the old
+  value back and the client would stop loading.
 - Sensor support for BMP280 and DHT11 is the second part of the work. No code
   change should be needed for them to plot: series are discovered from the data
   and the unit comes from the metric name, with rules already in place for

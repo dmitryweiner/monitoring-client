@@ -2,15 +2,18 @@
 
 Web interface for the home monitoring API. It signs in with the access key,
 charts every measured parameter over a chosen time range, and browses the
-camera archive. The backend is the Cloudflare Worker in the companion
-`monitoring` repository; this project only reads its `/v1` API and never
-touches D1 or R2 directly.
+camera archive. The backend is the Cloudflare Worker of the companion project
+[dmitryweiner/monitoring](https://github.com/dmitryweiner/monitoring), which
+also holds the Python agent on the board; this project only reads its `/v1` API
+and never touches D1 or R2 directly.
 
 Plan and scope: [PLAN.md](PLAN.md). What has actually been done and verified:
 [STATUS.md](STATUS.md).
 
 - Live site: https://dmitryweiner.github.io/monitoring-client/
 - API: https://home-monitoring-poc.dmitry-weiner.workers.dev
+- Backend and agent: https://github.com/dmitryweiner/monitoring
+- API contract: [`cloud/openapi.json`](https://github.com/dmitryweiner/monitoring/blob/main/cloud/openapi.json) in that repository
 - Stack: TypeScript, Vite, uPlot. No UI framework.
 
 ## Requirements
@@ -83,30 +86,34 @@ Repository settings must have Pages set to branch `main`, folder `/docs`.
 | Allowed origin | Worker `ALLOWED_ORIGINS` | `https://dmitryweiner.github.io` |
 
 Neither file holds a secret. The only backend change this client needs is the
-allowed origin, which is set in `cloud/wrangler.jsonc` of the `monitoring`
-repository and applied with `wrangler deploy`. Without it the browser's
+allowed origin, which is set in
+[`cloud/wrangler.jsonc`](https://github.com/dmitryweiner/monitoring/blob/main/cloud/wrangler.jsonc)
+of the backend repository and applied with `wrangler deploy` from there. Without it the browser's
 preflight is refused and nothing loads. Note that the value is scheme and host
 only, so it covers every GitHub Pages site of that account.
 
 ## Where the access key comes from
 
 There is no registration: the Worker has no user accounts. The key was
-generated once while the backend was set up and lives in the `monitoring`
-project, next to this one:
+generated once while the backend was set up, and it lives only in a local
+checkout of [dmitryweiner/monitoring](https://github.com/dmitryweiner/monitoring),
+at this path inside it:
 
 ```
-monitoring/secrets/admin.key
+secrets/admin.key
 ```
 
-It is 43 characters of url-safe base64, that is 32 random bytes, with
-permissions 0600, and `secrets/` is excluded from Git. Open the file and paste
-the line into the sign-in form.
+On the machine used so far that checkout sits beside this one, so the full path
+is `../monitoring/secrets/admin.key`. The file is 43 characters of url-safe
+base64, that is 32 random bytes, with permissions 0600. It is not in the
+repository: `secrets/` is excluded from Git, which is why the key cannot be
+found on GitHub. Open the file and paste the line into the sign-in form.
 
 Cloudflare holds only the SHA-256 of that key, as the Worker secret
 `ADMIN_HASH`, so the key itself cannot be read back out of Cloudflare. **That
 file is the only copy.** Losing it means issuing a new key.
 
-To replace the key, from the `monitoring` checkout:
+To replace the key, from the root of that checkout:
 
 ```sh
 head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n' > secrets/admin.key

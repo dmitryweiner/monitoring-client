@@ -1,9 +1,12 @@
 # Home monitoring web client — plan
 
-Status: draft for approval, 2026-09-14. Nothing is implemented yet.
-The backend is the Cloudflare Worker from the `monitoring` repository
-(`../monitoring`, GitHub `dmitryweiner/monitoring`); this repository only
-consumes its `/v1` API and never touches D1 or R2 directly.
+Status: approved on 2026-09-14 and implemented. This file is kept as the record
+of what was agreed; what was actually built, what changed along the way and what
+remains unverified are in [STATUS.md](STATUS.md).
+The backend is the Cloudflare Worker from
+[dmitryweiner/monitoring](https://github.com/dmitryweiner/monitoring), checked
+out beside this one as `../monitoring`; this repository only consumes its `/v1`
+API and never touches D1 or R2 directly.
 
 ## 1. Agreed requirements
 
@@ -20,8 +23,10 @@ consumes its `/v1` API and never touches D1 or R2 directly.
 
 ## 2. What the backend provides (read side)
 
-Base URL: `https://home-monitoring-poc.dmitry-weiner.workers.dev`
-(machine-readable contract: `../monitoring/cloud/openapi.json`).
+Base URL: `https://home-monitoring-poc.dmitry-weiner.workers.dev`. The
+machine-readable contract is
+[`cloud/openapi.json`](https://github.com/dmitryweiner/monitoring/blob/main/cloud/openapi.json)
+of the backend repository, locally `../monitoring/cloud/openapi.json`.
 
 | Endpoint | Used for |
 | --- | --- |
