@@ -95,7 +95,7 @@ export class ChartView implements View {
 
   private readonly filters = el('div', { class: 'filters filters--stack' });
   private readonly actionRow = el('div', { class: 'filters__row' });
-  private readonly layoutRow = el('div', { class: 'filters__row' });
+  private readonly layoutRow = el('div', { class: 'filters__row filters__block' });
   private readonly rangeRow = el('div', { class: 'filters__row filters__block' });
   private readonly seriesRow = el('div', { class: 'filters__row filters__block' });
   private readonly summary = el('span', { class: 'stat__note' });

@@ -301,7 +301,7 @@ describe('charts', () => {
     expect(refresh.classList.contains('button--primary')).toBe(true);
 
     expect(rows[1]!.textContent).toContain('Layout');
-    expect(rows[1]!.classList.contains('filters__block')).toBe(false);
+    expect(rows[1]!.classList.contains('filters__block')).toBe(true);
 
     expect(rows[2]!.textContent).toContain('Range');
     expect(rows[2]!.classList.contains('filters__block')).toBe(true);

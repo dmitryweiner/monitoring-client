@@ -263,7 +263,11 @@ const settle = async (rounds = 60) => {
       rows[0].querySelector('button').classList.contains('button--primary'),
     rows[0]?.textContent,
   );
-  check('layout choice comes next', rows[1]?.textContent.includes('Layout') === true);
+  check(
+    'layout choice comes next, framed like the rest',
+    rows[1]?.textContent.includes('Layout') === true &&
+      rows[1].classList.contains('filters__block'),
+  );
   check(
     'range block framed',
     rows[2]?.textContent.includes('Range') === true && rows[2].classList.contains('filters__block'),

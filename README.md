@@ -144,8 +144,8 @@ agent's queue, warnings for stale data, an unsynchronised clock and camera
 failures in the last 24 hours, and the most recent photo.
 
 **Charts** carry a filter block above everything, in four rows: Refresh with a
-note on what is loaded, the layout choice, a framed block of time ranges, and a
-framed block with a checkbox for every series and a Select all button. The
+note on what is loaded, then three framed blocks holding the layout choice, the
+time ranges, and a checkbox for every series with a Select all button. The
 range, the layout and the cleared series are remembered in `localStorage`, and
 everything is shown until a checkbox is cleared.
 
