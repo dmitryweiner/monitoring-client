@@ -177,6 +177,8 @@ async function settle(rounds = 8): Promise<void> {
 beforeEach(() => {
   window.location.hash = '';
   plotInstances.length = 0;
+  // Chart preferences live in localStorage; each test starts from the defaults.
+  window.localStorage.clear();
   globalThis.URL.createObjectURL = () => 'blob:fake';
   globalThis.URL.revokeObjectURL = () => undefined;
 });
@@ -266,6 +268,117 @@ describe('charts', () => {
     // cpu temperature, agent counts, agent bytes, agent age.
     expect(plotInstances).toHaveLength(4);
     expect(root.textContent).toContain('Temperature, °C');
+  });
+
+  it('offers a layout switch and a checkbox per series, all on by default', async () => {
+    window.location.hash = '#/chart';
+    const { root } = mount(true);
+    await settle();
+
+    const chips = [...root.querySelectorAll<HTMLButtonElement>('.chip')].map(
+      (chip) => chip.textContent,
+    );
+    expect(chips).toContain('One chart');
+    expect(chips).toContain('Separate charts');
+
+    const boxes = [...root.querySelectorAll<HTMLInputElement>('.source input')];
+    expect(boxes).toHaveLength(5);
+    expect(boxes.every((box) => box.checked)).toBe(true);
+    expect(root.textContent).toContain('Select all');
+  });
+
+  it('draws one plot when the combined layout is chosen', async () => {
+    window.location.hash = '#/chart';
+    const { root } = mount(true);
+    await settle();
+    expect(plotInstances).toHaveLength(4);
+
+    plotInstances.length = 0;
+    [...root.querySelectorAll<HTMLButtonElement>('.chip')]
+      .find((chip) => chip.textContent === 'One chart')!
+      .click();
+    await settle();
+
+    expect(plotInstances).toHaveLength(1);
+    // Mixed units cannot share a real axis, so the plot says what it shows.
+    expect(root.textContent).toContain('rescaled');
+    expect(root.querySelectorAll('.legend__item')).toHaveLength(5);
+  });
+
+  it('remembers the layout across mounts', async () => {
+    window.location.hash = '#/chart';
+    const first = mount(true);
+    await settle();
+    [...first.root.querySelectorAll<HTMLButtonElement>('.chip')]
+      .find((chip) => chip.textContent === 'One chart')!
+      .click();
+    await settle();
+
+    plotInstances.length = 0;
+    mount(true);
+    await settle();
+    expect(plotInstances).toHaveLength(1);
+  });
+
+  it('removes a series, and its panel, when its checkbox is cleared', async () => {
+    window.location.hash = '#/chart';
+    const { root } = mount(true);
+    await settle();
+
+    const temperature = [...root.querySelectorAll<HTMLElement>('.source')].find((item) =>
+      item.textContent?.includes('CPU temperature'),
+    )!;
+    const box = temperature.querySelector<HTMLInputElement>('input')!;
+    box.checked = false;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+
+    expect(root.textContent).not.toContain('Temperature, °C');
+    expect(root.querySelectorAll('.panel')).toHaveLength(3);
+    expect(root.querySelectorAll('.legend__item')).toHaveLength(4);
+    // The checkbox stays available so the series can be brought back.
+    expect(root.querySelectorAll('.source input')).toHaveLength(5);
+  });
+
+  it('persists the cleared series and restores them with Select all', async () => {
+    window.location.hash = '#/chart';
+    const { root } = mount(true);
+    await settle();
+
+    const box = [...root.querySelectorAll<HTMLElement>('.source')]
+      .find((item) => item.textContent?.includes('CPU temperature'))!
+      .querySelector<HTMLInputElement>('input')!;
+    box.checked = false;
+    box.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+
+    expect(window.localStorage.getItem('monitor.hiddenSeries')).toContain('cpu.cpu_temperature_c');
+
+    [...root.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Select all')!
+      .click();
+    await settle();
+
+    expect(root.querySelectorAll('.panel')).toHaveLength(4);
+    expect(window.localStorage.getItem('monitor.hiddenSeries')).toBe('[]');
+    expect(
+      [...root.querySelectorAll<HTMLInputElement>('.source input')].every((item) => item.checked),
+    ).toBe(true);
+  });
+
+  it('says so when nothing is selected', async () => {
+    window.location.hash = '#/chart';
+    const { root } = mount(true);
+    await settle();
+
+    for (const box of [...root.querySelectorAll<HTMLInputElement>('.source input')]) {
+      box.checked = false;
+      box.dispatchEvent(new Event('change', { bubbles: true }));
+      await settle(2);
+    }
+
+    expect(root.textContent).toContain('Nothing is selected');
+    expect(root.querySelectorAll('.panel')).toHaveLength(0);
   });
 
   it('asks the aggregate endpoint for ranges longer than a week', async () => {

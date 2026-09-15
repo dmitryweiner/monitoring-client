@@ -255,12 +255,62 @@ const settle = async (rounds = 60) => {
   check('every series has a legend entry', root.querySelectorAll('.legend__item').length === 5);
   check('plots created', root.querySelectorAll('canvas').length >= 4);
 
+  const boxes = [...root.querySelectorAll('.source input')];
+  check(
+    'a checkbox per series, all on by default',
+    boxes.length === 5 && boxes.every((box) => box.checked),
+    String(boxes.length),
+  );
+  check(
+    'Select all offered',
+    [...root.querySelectorAll('button')].some((button) => button.textContent === 'Select all'),
+  );
+
   const tableToggle = [...root.querySelectorAll('button')].find(
     (button) => button.textContent === 'Table',
   );
   tableToggle.click();
   await settle(10);
   check('table view lists the same samples', root.querySelectorAll('tbody tr').length > 0);
+
+  const panelCount = () => root.querySelectorAll('.panel').length;
+
+  // Clearing a checkbox drops the series and, with it, an empty panel.
+  const temperatureBox = [...root.querySelectorAll('.source')]
+    .find((item) => item.textContent.includes('CPU temperature'))
+    .querySelector('input');
+  temperatureBox.checked = false;
+  temperatureBox.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await settle(20);
+  check('clearing a series removes its panel', panelCount() === 3, String(panelCount()));
+  check(
+    'the choice is stored',
+    (window.localStorage.getItem('monitor.hiddenSeries') ?? '').includes('cpu.cpu_temperature_c'),
+  );
+
+  [...root.querySelectorAll('button')]
+    .find((button) => button.textContent === 'Select all')
+    .click();
+  await settle(20);
+  check('Select all brings every series back', panelCount() === 4, String(panelCount()));
+
+  // One combined plot for everything, rescaled because the units differ.
+  [...root.querySelectorAll('.chip')].find((chip) => chip.textContent === 'One chart').click();
+  await settle(20);
+  check('combined layout draws a single plot', panelCount() === 1, String(panelCount()));
+  check('combined plot explains the rescale', root.textContent.includes('rescaled'));
+  check(
+    'combined plot keeps every series in the legend',
+    root.querySelectorAll('.legend__item').length === 5,
+    String(root.querySelectorAll('.legend__item').length),
+  );
+  check('no error in the combined layout', errors.length === 0, errors.slice(0, 2).join(' | '));
+
+  [...root.querySelectorAll('.chip')]
+    .find((chip) => chip.textContent === 'Separate charts')
+    .click();
+  await settle(20);
+  check('separate layout restored', panelCount() === 4, String(panelCount()));
 
   calls.length = 0;
   [...root.querySelectorAll('.chip')].find((chip) => chip.textContent === 'Last 90 days').click();

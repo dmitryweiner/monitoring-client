@@ -7,15 +7,15 @@ What has been built and what was actually verified. The target is described in
 
 Milestones 1 to 7 of the plan are done: scaffold, API client and
 authentication, overview, charts, photo viewer, the backend origin change, and
-the deployment. The application builds, type-checks, passes 89 tests, and the
+the deployment. The application builds, type-checks, passes 102 tests, and the
 built bundle has been driven through all three pages.
 
 | Area | State |
 | --- | --- |
 | Build | Vite 7, TypeScript strict, output committed to `docs/`, `base` `/monitoring-client/` |
 | Bundle | 89.5 kB JavaScript (36.2 kB gzipped), 8.5 kB CSS; no source map in the committed build |
-| Tests | 89 passing across 7 files: model, API client, session, and views in a DOM |
-| Bundle check | `npm run smoke` drives the built bundle through all three pages: 29 checks passing |
+| Tests | 102 passing across 7 files: model, API client, session, and views in a DOM |
+| Bundle check | `npm run smoke` drives the built bundle through all three pages: 39 checks passing |
 | Dependencies | uPlot at runtime; Vite, TypeScript, Vitest, Prettier, happy-dom for development. `npm audit` reports 0 vulnerabilities |
 | Deployment | Live at https://dmitryweiner.github.io/monitoring-client/ from `main:/docs` |
 
@@ -36,6 +36,14 @@ crosshair. Two y-scales on one plot make the alignment of the two scales
 arbitrary and imply a correlation that is not in the data. The result still
 answers the requirement of seeing every parameter in one picture, and the
 panels behave as one chart.
+
+A later review asked for a switch between one chart and separate charts. The
+combined layout keeps the real axis when the selected series share a unit. When
+they do not, it rescales each series to its own range rather than seating two
+y-scales on one plot, and says so under the title; the legend and the table
+still show the measured values. That layout may carry eight series, the count
+the palette validates for lines compared with their neighbours; separate panels
+stay capped at three, the count that holds when any two panels are compared.
 
 ## Verified against the live Worker
 

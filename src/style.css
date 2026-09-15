@@ -1,7 +1,9 @@
 /*
- * Design tokens come from the validated data-visualisation palette: three
- * categorical slots (the count that clears every colour-vision gate when any
- * two series may be compared) plus chart chrome and status colours.
+ * Design tokens come from the validated data-visualisation palette: eight
+ * categorical slots in their validated order, plus chart chrome and status
+ * colours. Separate panels use only the first three, the count that clears
+ * every colour-vision gate when any two panels may be compared; one combined
+ * plot compares neighbouring lines and may use all eight.
  */
 
 :root {
@@ -20,6 +22,11 @@
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
 
   --good: #0ca30c;
   --warning: #fab219;
@@ -47,6 +54,11 @@
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
   }
 }
 
@@ -252,6 +264,75 @@ input[type='time'] {
   background: var(--text-primary);
   color: var(--surface);
   font-weight: 600;
+}
+
+/* The filter block: range, layout and series selection, above every panel. */
+.filters--stack {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.filters__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.filters__row:last-child {
+  margin-bottom: 0;
+}
+
+.filters__label {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+
+.source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.source:hover {
+  background: var(--hover);
+}
+
+.source input {
+  accent-color: var(--series-1);
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* A short stroke keys the series; the text stays in ink so it stays legible. */
+.source__key {
+  flex: none;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.source__label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.panel__note {
+  margin: 0 0 8px;
 }
 
 /* ---------- cards ---------- */

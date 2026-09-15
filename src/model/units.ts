@@ -93,6 +93,19 @@ const SECONDS: Unit = {
   formatTick: (value) => formatDuration(value),
 };
 
+/**
+ * The axis used when one plot carries series of different units. Each series is
+ * rescaled to its own range, so the shapes can be compared while the legend and
+ * the table keep the measured values in their real units.
+ */
+const NORMALIZED: Unit = {
+  id: 'normalized',
+  label: 'Rescaled to each series own range, %',
+  suffix: '%',
+  format: (value) => `${value.toFixed(0)} %`,
+  formatTick: (value) => value.toFixed(0),
+};
+
 const COUNT: Unit = {
   id: 'count',
   label: 'Count',
@@ -124,4 +137,4 @@ export function unitForMetric(metric: string): Unit {
   return COUNT;
 }
 
-export const UNITS = { CELSIUS, PERCENT, PRESSURE, BYTES, SECONDS, COUNT };
+export const UNITS = { CELSIUS, PERCENT, PRESSURE, BYTES, SECONDS, COUNT, NORMALIZED };

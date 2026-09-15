@@ -9,10 +9,21 @@
  */
 
 import type { AggregateResponse, StoredEvent } from '../api/types.ts';
-import { UNIT_ORDER, unitForMetric, type Unit } from './units.ts';
+import { UNIT_ORDER, UNITS, unitForMetric, type Unit } from './units.ts';
 
-/** Series beyond this count are moved to an additional panel of the same unit. */
+/**
+ * Series beyond this count are moved to an additional panel of the same unit.
+ * Three is what the categorical palette validates for when any two panels may
+ * be compared side by side.
+ */
 export const MAX_SERIES_PER_PANEL = 3;
+
+/**
+ * Series on one combined plot. Lines on a single plot are compared with their
+ * neighbours, which the eight-slot palette is validated for; a ninth series
+ * would have to reuse a hue.
+ */
+export const MAX_COMBINED_SERIES = 8;
 
 export interface SeriesPoint {
   t: number;
@@ -38,10 +49,15 @@ export interface Series {
   unit: Unit;
   /** Palette slot, derived from the full discovered set rather than the visible one. */
   colorIndex: number;
+  /** What is plotted. Rescaled when a combined plot mixes units. */
   values: Array<number | null>;
   /** Present only for aggregated data, where each bucket carries a range. */
   minimum: Array<number | null> | null;
   maximum: Array<number | null> | null;
+  /** Values as measured, set only when `values` has been rescaled. */
+  displayValues: Array<number | null> | null;
+  /** The unit those measured values carry. */
+  displayUnit: Unit | null;
 }
 
 export interface UnitPanel {
@@ -51,6 +67,8 @@ export interface UnitPanel {
   series: Series[];
   /** True when the series carry bucket minimum/maximum bands. */
   aggregated: boolean;
+  /** Shown under the title when the plot needs explaining. */
+  note: string | null;
 }
 
 export interface ChartData {
@@ -192,6 +210,7 @@ export function buildChartData(inputs: SeriesInput[], gapSeconds: number): Chart
         title: parts.length > 1 ? `${group.unit.label} (${partIndex + 1})` : group.unit.label,
         series,
         aggregated: series.some((item) => item.minimum !== null),
+        note: null,
       });
     });
   }
@@ -235,6 +254,78 @@ function toSeries(
     values,
     minimum,
     maximum,
+    displayValues: null,
+    displayUnit: null,
+  };
+}
+
+/** Smallest and largest finite value across a series and any band it carries. */
+function extent(series: Series): { min: number; max: number } | null {
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (const list of [series.values, series.minimum, series.maximum]) {
+    if (!list) continue;
+    for (const value of list) {
+      if (value === null) continue;
+      if (value < min) min = value;
+      if (value > max) max = value;
+    }
+  }
+  return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
+}
+
+/** Map a series onto 0..100 of its own range, keeping the measured values. */
+function rescale(series: Series, colorIndex: number): Series {
+  const bounds = extent(series);
+  const map = (value: number | null): number | null => {
+    if (value === null || !bounds) return null;
+    // A series that never changes sits mid-axis rather than on an edge.
+    if (bounds.max === bounds.min) return 50;
+    return ((value - bounds.min) / (bounds.max - bounds.min)) * 100;
+  };
+  return {
+    ...series,
+    colorIndex,
+    values: series.values.map(map),
+    minimum: series.minimum ? series.minimum.map(map) : null,
+    maximum: series.maximum ? series.maximum.map(map) : null,
+    displayValues: series.values,
+    displayUnit: series.unit,
+  };
+}
+
+/**
+ * Fold every panel into one plot.
+ *
+ * Series that already share a unit keep their real axis. Mixed units cannot
+ * share an axis honestly, so each series is rescaled to its own range and the
+ * axis says so; the legend and the table still carry the measured values.
+ */
+export function combinePanels(data: ChartData): ChartData {
+  const all = data.panels.flatMap((panel) => panel.series);
+  if (all.length === 0) return { timestamps: data.timestamps, panels: [] };
+
+  // Sorting by key keeps a series on the same palette slot whatever else is shown.
+  const ordered = [...all].sort((left, right) => left.key.localeCompare(right.key));
+  const sameUnit = new Set(ordered.map((series) => series.unit.id)).size === 1;
+  const unit = sameUnit ? (ordered[0] as Series).unit : UNITS.NORMALIZED;
+  const series = ordered.map((item, index) =>
+    sameUnit ? { ...item, colorIndex: index } : rescale(item, index),
+  );
+
+  return {
+    timestamps: data.timestamps,
+    panels: [
+      {
+        unit,
+        title: sameUnit ? unit.label : 'All parameters',
+        series,
+        aggregated: series.some((item) => item.minimum !== null),
+        note: sameUnit
+          ? null
+          : 'The series use different units, so each is rescaled to its own range. Values in the legend and the table are as measured.',
+      },
+    ],
   };
 }
 

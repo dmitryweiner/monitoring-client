@@ -1,5 +1,9 @@
 /**
- * The chart page: one filter row, then every measured parameter below it.
+ * The chart page: one filter block, then the selected parameters below it.
+ *
+ * The filter block holds the time range, the choice between one combined plot
+ * and one plot per unit, and a checkbox per series. Everything below re-renders
+ * against the same selection.
  *
  * Short ranges are drawn from raw events at full resolution. Beyond a week the
  * server aggregates into buckets and the panel shows the bucket mean with a
@@ -7,6 +11,7 @@
  */
 
 import {
+  CHART_MODE_STORAGE_KEY,
   HIDDEN_SERIES_STORAGE_KEY,
   RANGE_STORAGE_KEY,
   SAMPLE_INTERVAL_SECONDS,
@@ -23,13 +28,16 @@ import {
   presetRange,
 } from '../model/range.ts';
 import {
+  MAX_COMBINED_SERIES,
   buildChartData,
+  combinePanels,
   discoverMetrics,
   seriesFromAggregates,
   seriesFromEvents,
   type ChartData,
+  type Series,
 } from '../model/series.ts';
-import { renderChart, type ChartPanel } from './chart.ts';
+import { renderChart, seriesColor, type ChartPanel } from './chart.ts';
 import { describeError, isAbort, type AppContext, type View } from './context.ts';
 import { clear, el } from './dom.ts';
 import { formatLocal } from './format.ts';
@@ -37,26 +45,18 @@ import { formatLocal } from './format.ts';
 /** How much of a delivery gap draws as a break rather than a straight line. */
 const GAP_FACTOR = 2.5;
 
-function readStoredRange(): RangeId {
-  try {
-    const stored = globalThis.localStorage?.getItem(RANGE_STORAGE_KEY);
-    if (stored && findPreset(stored)) return stored as RangeId;
-  } catch {
-    // Stored preferences are a convenience; the default is always valid.
-  }
-  return DEFAULT_RANGE_ID;
-}
+/** One plot for everything, or one plot per unit. */
+export type ChartLayout = 'combined' | 'separate';
 
-function readHiddenSeries(): Set<string> {
+const DEFAULT_LAYOUT: ChartLayout = 'separate';
+
+function readStored(key: string): string | null {
   try {
-    const stored = globalThis.localStorage?.getItem(HIDDEN_SERIES_STORAGE_KEY);
-    if (!stored) return new Set();
-    const parsed: unknown = JSON.parse(stored);
-    if (Array.isArray(parsed)) return new Set(parsed.filter((item) => typeof item === 'string'));
+    return globalThis.localStorage?.getItem(key) ?? null;
   } catch {
-    // As above.
+    // Stored preferences are a convenience; the defaults are always valid.
+    return null;
   }
-  return new Set();
 }
 
 function persist(key: string, value: string): void {
@@ -67,21 +67,52 @@ function persist(key: string, value: string): void {
   }
 }
 
+function readStoredRange(): RangeId {
+  const stored = readStored(RANGE_STORAGE_KEY);
+  return stored && findPreset(stored) ? (stored as RangeId) : DEFAULT_RANGE_ID;
+}
+
+function readStoredLayout(): ChartLayout {
+  const stored = readStored(CHART_MODE_STORAGE_KEY);
+  return stored === 'combined' || stored === 'separate' ? stored : DEFAULT_LAYOUT;
+}
+
+/** Series the reader has switched off. Everything is on until one is cleared. */
+function readHiddenSeries(): Set<string> {
+  const stored = readStored(HIDDEN_SERIES_STORAGE_KEY);
+  if (!stored) return new Set();
+  try {
+    const parsed: unknown = JSON.parse(stored);
+    if (Array.isArray(parsed)) return new Set(parsed.filter((item) => typeof item === 'string'));
+  } catch {
+    // As above.
+  }
+  return new Set();
+}
+
 export class ChartView implements View {
   readonly element: HTMLElement;
 
-  private readonly filters = el('div', { class: 'filters' });
+  private readonly filters = el('div', { class: 'filters filters--stack' });
+  private readonly rangeRow = el('div', { class: 'filters__row' });
+  private readonly layoutRow = el('div', { class: 'filters__row' });
+  private readonly seriesRow = el('div', { class: 'filters__row' });
   private readonly summary = el('span', { class: 'stat__note' });
   private readonly panelHost = el('div', {});
   private readonly hidden = readHiddenSeries();
 
   private rangeId: RangeId = readStoredRange();
+  private layout: ChartLayout = readStoredLayout();
+  private data: ChartData | null = null;
+  private range: { start: number; end: number } | null = null;
   private panels: ChartPanel[] = [];
   private controller: AbortController | null = null;
 
   constructor(private readonly context: AppContext) {
+    this.filters.append(this.rangeRow, this.layoutRow, this.seriesRow);
     this.element = el('section', {}, [this.filters, this.panelHost]);
-    this.renderFilters();
+    this.renderRangeRow();
+    this.renderLayoutRow();
   }
 
   mount(): void {
@@ -98,29 +129,31 @@ export class ChartView implements View {
     this.panels = [];
   }
 
-  /** A single row of range presets, scoping every panel below it. */
-  private renderFilters(): void {
-    clear(this.filters);
+  private chip(label: string, pressed: boolean, onClick: () => void): HTMLElement {
+    return el('button', {
+      class: 'chip',
+      text: label,
+      attrs: { type: 'button', 'aria-pressed': String(pressed) },
+      on: { click: onClick },
+    });
+  }
+
+  /** Time range. Changing it refetches. */
+  private renderRangeRow(): void {
+    clear(this.rangeRow);
     const group = el('div', { class: 'filters__group' });
     for (const preset of RANGE_PRESETS) {
       group.append(
-        el('button', {
-          class: 'chip',
-          text: preset.label,
-          attrs: { type: 'button', 'aria-pressed': String(preset.id === this.rangeId) },
-          on: {
-            click: () => {
-              if (this.rangeId === preset.id) return;
-              this.rangeId = preset.id;
-              persist(RANGE_STORAGE_KEY, preset.id);
-              this.renderFilters();
-              void this.load();
-            },
-          },
+        this.chip(preset.label, preset.id === this.rangeId, () => {
+          if (this.rangeId === preset.id) return;
+          this.rangeId = preset.id;
+          persist(RANGE_STORAGE_KEY, preset.id);
+          this.renderRangeRow();
+          void this.load();
         }),
       );
     }
-    this.filters.append(
+    this.rangeRow.append(
       group,
       this.summary,
       el('span', { class: 'filters__spacer' }),
@@ -131,6 +164,98 @@ export class ChartView implements View {
         on: { click: () => void this.load() },
       }),
     );
+  }
+
+  /** One plot or one per unit. Changing it only redraws what is already loaded. */
+  private renderLayoutRow(): void {
+    clear(this.layoutRow);
+    const group = el('div', { class: 'filters__group' });
+    const choices: Array<{ id: ChartLayout; label: string }> = [
+      { id: 'combined', label: 'One chart' },
+      { id: 'separate', label: 'Separate charts' },
+    ];
+    for (const choice of choices) {
+      group.append(
+        this.chip(choice.label, choice.id === this.layout, () => {
+          if (this.layout === choice.id) return;
+          this.layout = choice.id;
+          persist(CHART_MODE_STORAGE_KEY, choice.id);
+          this.renderLayoutRow();
+          this.renderPanels();
+        }),
+      );
+    }
+    this.layoutRow.append(el('span', { class: 'filters__label', text: 'Layout' }), group);
+  }
+
+  /**
+   * A checkbox per series, plus the button that turns them all back on.
+   *
+   * `drawn` maps a series to the colour it currently carries on screen. The
+   * two layouts assign different slots, so the swatch is taken from what is
+   * actually plotted rather than from the series itself.
+   */
+  private renderSeriesRow(drawn: Map<string, number>): void {
+    clear(this.seriesRow);
+    const all = this.allSeries();
+    if (all.length === 0) return;
+
+    const list = el('div', { class: 'sources', attrs: { role: 'group' } });
+    const multipleSources = new Set(all.map((series) => series.source)).size > 1;
+
+    for (const series of all) {
+      const checked = !this.hidden.has(series.key);
+      const box = el('input', {
+        attrs: { type: 'checkbox', ...(checked ? { checked: 'checked' } : {}) },
+        on: {
+          change: (event) => {
+            const target = event.target as HTMLInputElement;
+            if (target.checked) this.hidden.delete(series.key);
+            else this.hidden.add(series.key);
+            persist(HIDDEN_SERIES_STORAGE_KEY, JSON.stringify([...this.hidden]));
+            this.renderPanels();
+          },
+        },
+      });
+      const slot = drawn.get(series.key);
+      const key = el('span', { class: 'source__key' });
+      // A series that is switched off draws nothing, so it carries no hue.
+      key.style.background = slot === undefined ? 'var(--text-muted)' : seriesColor(slot);
+      const label = multipleSources ? `${series.source} · ${series.label}` : series.label;
+      list.append(
+        el('label', { class: 'source', title: `${series.source} · ${series.metric}` }, [
+          box,
+          key,
+          el('span', { class: 'source__label', text: label }),
+        ]),
+      );
+    }
+
+    const allOn = all.every((series) => !this.hidden.has(series.key));
+    this.seriesRow.append(
+      el('span', { class: 'filters__label', text: 'Show' }),
+      list,
+      el('button', {
+        class: 'button button--quiet',
+        text: 'Select all',
+        attrs: { type: 'button', ...(allOn ? { disabled: 'disabled' } : {}) },
+        on: {
+          click: () => {
+            for (const series of all) this.hidden.delete(series.key);
+            persist(HIDDEN_SERIES_STORAGE_KEY, JSON.stringify([...this.hidden]));
+            this.renderPanels();
+          },
+        },
+      }),
+    );
+  }
+
+  /** Every series the loaded range holds, in a stable order, hidden or not. */
+  private allSeries(): Series[] {
+    if (!this.data) return [];
+    return this.data.panels
+      .flatMap((panel) => panel.series)
+      .sort((left, right) => left.key.localeCompare(right.key));
   }
 
   private async load(): Promise<void> {
@@ -150,7 +275,9 @@ export class ChartView implements View {
           : await this.loadAggregated(range, controller.signal);
       if (controller.signal.aborted) return;
       this.context.clearNotice();
-      this.render(data, range);
+      this.data = data;
+      this.range = range;
+      this.renderPanels();
     } catch (error) {
       if (isAbort(error) || controller.signal.aborted) return;
       this.context.notify(describeError(error), 'error');
@@ -192,25 +319,78 @@ export class ChartView implements View {
     return buildChartData(seriesFromAggregates(responses), GAP_FACTOR * bucketSeconds);
   }
 
-  private render(data: ChartData, range: { start: number; end: number }): void {
+  /** Redraw from data already in memory, against the current selection. */
+  private renderPanels(): void {
     this.disposePanels();
+    clear(this.panelHost);
+
+    const data = this.data;
+    if (!data) {
+      this.renderSeriesRow(new Map());
+      return;
+    }
+    const range = this.range;
+
     if (data.panels.length === 0) {
-      clear(this.panelHost);
+      this.renderSeriesRow(new Map());
+      const from = range ? formatLocal(range.start) : '';
+      const to = range ? formatLocal(range.end) : '';
       this.panelHost.append(
-        el('p', {
-          class: 'empty',
-          text: `No measurements between ${formatLocal(range.start)} and ${formatLocal(range.end)}.`,
-        }),
+        el('p', { class: 'empty', text: `No measurements between ${from} and ${to}.` }),
       );
       return;
     }
-    this.panels = renderChart(this.panelHost, data, {
-      hidden: this.hidden,
+
+    const selected = this.selected(data);
+    if (selected.panels.length === 0) {
+      this.renderSeriesRow(new Map());
+      this.panelHost.append(
+        el('p', { class: 'empty', text: 'Nothing is selected. Choose a series above.' }),
+      );
+      return;
+    }
+
+    let shown = selected;
+    if (this.layout === 'combined') {
+      const total = selected.panels.reduce((count, panel) => count + panel.series.length, 0);
+      if (total > MAX_COMBINED_SERIES) {
+        this.renderSeriesRow(new Map());
+        this.panelHost.append(
+          el('p', {
+            class: 'notice notice--warning',
+            text: `One chart shows at most ${MAX_COMBINED_SERIES} series and ${total} are selected. Clear some above, or switch to separate charts.`,
+          }),
+        );
+        return;
+      }
+      shown = combinePanels(selected);
+    }
+
+    const drawn = new Map<string, number>();
+    for (const panel of shown.panels) {
+      for (const series of panel.series) drawn.set(series.key, series.colorIndex);
+    }
+    this.renderSeriesRow(drawn);
+
+    this.panels = renderChart(this.panelHost, shown, {
+      hidden: new Set(),
       onToggle: (key, visible) => {
         if (visible) this.hidden.delete(key);
         else this.hidden.add(key);
         persist(HIDDEN_SERIES_STORAGE_KEY, JSON.stringify([...this.hidden]));
+        this.renderPanels();
       },
     });
+  }
+
+  /** The loaded data with unselected series, and then empty panels, removed. */
+  private selected(data: ChartData): ChartData {
+    const panels = data.panels
+      .map((panel) => ({
+        ...panel,
+        series: panel.series.filter((series) => !this.hidden.has(series.key)),
+      }))
+      .filter((panel) => panel.series.length > 0);
+    return { timestamps: data.timestamps, panels };
   }
 }

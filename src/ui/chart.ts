@@ -21,7 +21,18 @@ import { formatLocal, formatUtc } from './format.ts';
 /** Charts with this cursor key move their crosshair together. */
 const SYNC_KEY = 'monitoring';
 
-const SERIES_VARS = ['--series-1', '--series-2', '--series-3'];
+// Eight validated slots. A slot follows the series itself, never its rank, so
+// hiding one series never repaints the others.
+const SERIES_VARS = [
+  '--series-1',
+  '--series-2',
+  '--series-3',
+  '--series-4',
+  '--series-5',
+  '--series-6',
+  '--series-7',
+  '--series-8',
+];
 
 const PLOT_HEIGHT = 190;
 const TABLE_ROW_LIMIT = 500;
@@ -31,7 +42,8 @@ function cssValue(name: string, fallback: string): string {
   return value || fallback;
 }
 
-function seriesColor(colorIndex: number): string {
+/** The palette colour of a series, by its stable slot. */
+export function seriesColor(colorIndex: number): string {
   const name = SERIES_VARS[colorIndex % SERIES_VARS.length] as string;
   return cssValue(name, '#2a78d6');
 }
@@ -116,6 +128,7 @@ export class ChartPanel {
         this.cursorLabel,
         tableToggle,
       ]),
+      panel.note ? el('p', { class: 'stat__note panel__note', text: panel.note }) : null,
       this.plotHost,
       this.legendHost,
       this.tableHost,
@@ -167,8 +180,6 @@ export class ChartPanel {
         width: 2,
         show: visible,
         points: { show: false },
-        // The crosshair marker carries a ring in the surface colour so it stays
-        // legible where two lines cross.
         scale: 'y',
       });
 
@@ -297,17 +308,23 @@ export class ChartPanel {
     for (const slot of this.slots) {
       const node = this.valueNodes.get(slot.series.key);
       if (!node) continue;
-      const value = slot.series.values[position];
-      node.textContent =
-        value === null || value === undefined ? '—' : this.panel.unit.format(value);
+      node.textContent = this.readValue(slot, position);
     }
+  }
+
+  /** The measured value, which differs from the plotted one on a shared axis. */
+  private readValue(slot: SeriesSlot, index: number): string {
+    const values = slot.series.displayValues ?? slot.series.values;
+    const unit = slot.series.displayUnit ?? this.panel.unit;
+    const value = values[index];
+    return value === null || value === undefined ? '—' : unit.format(value);
   }
 
   /** Index of the newest sample that any series in this panel actually has. */
   private lastSampleIndex(): number | null {
     for (let index = this.timestamps.length - 1; index >= 0; index -= 1) {
       for (const slot of this.slots) {
-        const value = slot.series.values[index];
+        const value = (slot.series.displayValues ?? slot.series.values)[index];
         if (value !== null && value !== undefined) return index;
       }
     }
@@ -333,12 +350,7 @@ export class ChartPanel {
     ) {
       const timestamp = this.timestamps[index];
       if (timestamp === undefined) continue;
-      const cells = visible.map((slot) => {
-        const value = slot.series.values[index];
-        return el('td', {
-          text: value === null || value === undefined ? '—' : this.panel.unit.format(value),
-        });
-      });
+      const cells = visible.map((slot) => el('td', { text: this.readValue(slot, index) }));
       if (cells.every((cell) => cell.textContent === '—')) continue;
       rows.push(el('tr', {}, [el('td', { text: formatLocal(timestamp) }), ...cells]));
     }

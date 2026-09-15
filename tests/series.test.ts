@@ -3,6 +3,7 @@ import type { AggregateResponse, StoredEvent } from '../src/api/types.ts';
 import {
   MAX_SERIES_PER_PANEL,
   buildChartData,
+  combinePanels,
   discoverMetrics,
   humanizeMetric,
   seriesFromAggregates,
@@ -201,5 +202,121 @@ describe('discoverMetrics', () => {
       { source: 'agent', metric: 'queued' },
       { source: 'cpu', metric: 'cpu_temperature_c' },
     ]);
+  });
+});
+
+describe('combinePanels', () => {
+  function chart(values: Record<string, number>, extra: Record<string, number> = {}) {
+    return buildChartData(
+      seriesFromEvents([
+        event('cpu', T0, values),
+        event('cpu', T0 + 600, values),
+        ...(Object.keys(extra).length
+          ? [event('agent', T0, extra), event('agent', T0 + 600, extra)]
+          : []),
+      ]),
+      1500,
+    );
+  }
+
+  it('returns nothing for no panels', () => {
+    expect(combinePanels({ timestamps: [], panels: [] }).panels).toEqual([]);
+  });
+
+  it('keeps the real axis when every series shares a unit', () => {
+    const combined = combinePanels(chart({ cpu_temperature_c: 42, other_temp_c: 30 }));
+    expect(combined.panels).toHaveLength(1);
+    const panel = combined.panels[0]!;
+    expect(panel.unit.id).toBe('celsius');
+    expect(panel.note).toBeNull();
+    expect(panel.series.map((series) => series.values[0])).toEqual([42, 30]);
+    expect(panel.series.every((series) => series.displayValues === null)).toBe(true);
+  });
+
+  it('rescales onto a shared axis when units differ', () => {
+    const data = buildChartData(
+      seriesFromEvents([
+        event('cpu', T0, { cpu_temperature_c: 40 }),
+        event('cpu', T0 + 600, { cpu_temperature_c: 60 }),
+        event('agent', T0, { bytes: 1000 }),
+        event('agent', T0 + 600, { bytes: 5000 }),
+      ]),
+      1500,
+    );
+    const panel = combinePanels(data).panels[0]!;
+
+    expect(panel.unit.id).toBe('normalized');
+    expect(panel.note).toContain('rescaled');
+    for (const series of panel.series) {
+      expect(series.values).toEqual([0, 100]);
+    }
+  });
+
+  it('keeps the measured values for the readout', () => {
+    const data = buildChartData(
+      seriesFromEvents([
+        event('cpu', T0, { cpu_temperature_c: 40 }),
+        event('cpu', T0 + 600, { cpu_temperature_c: 60 }),
+        event('agent', T0, { bytes: 1000 }),
+        event('agent', T0 + 600, { bytes: 5000 }),
+      ]),
+      1500,
+    );
+    const panel = combinePanels(data).panels[0]!;
+    const temperature = panel.series.find((series) => series.metric === 'cpu_temperature_c')!;
+
+    expect(temperature.displayValues).toEqual([40, 60]);
+    expect(temperature.displayUnit?.id).toBe('celsius');
+  });
+
+  it('puts a series that never changes in the middle of the axis', () => {
+    const data = buildChartData(
+      seriesFromEvents([
+        event('cpu', T0, { cpu_temperature_c: 40 }),
+        event('cpu', T0 + 600, { cpu_temperature_c: 60 }),
+        event('agent', T0, { queued: 7 }),
+        event('agent', T0 + 600, { queued: 7 }),
+      ]),
+      1500,
+    );
+    const panel = combinePanels(data).panels[0]!;
+    const queued = panel.series.find((series) => series.metric === 'queued')!;
+
+    expect(queued.values).toEqual([50, 50]);
+  });
+
+  it('rescales an aggregated band on the same scale as its line', () => {
+    const responses = [
+      {
+        source: 'cpu',
+        metric: 'cpu_temperature_c',
+        bucket_seconds: 3600,
+        items: [{ bucket: T0, count: 6, mean: 50, minimum: 40, maximum: 60 }],
+      },
+      {
+        source: 'agent',
+        metric: 'bytes',
+        bucket_seconds: 3600,
+        items: [{ bucket: T0, count: 6, mean: 200, minimum: 100, maximum: 300 }],
+      },
+    ];
+    const panel = combinePanels(buildChartData(seriesFromAggregates(responses), 7200)).panels[0]!;
+
+    for (const series of panel.series) {
+      // The band spans the whole range, so the mean sits at its midpoint.
+      expect(series.minimum).toEqual([0]);
+      expect(series.values).toEqual([50]);
+      expect(series.maximum).toEqual([100]);
+    }
+  });
+
+  it('assigns palette slots by series key, not by panel order', () => {
+    const panel = combinePanels(chart({ cpu_temperature_c: 42 }, { queued: 1, bytes: 10 }))
+      .panels[0]!;
+    const slots = new Map(panel.series.map((series) => [series.key, series.colorIndex]));
+
+    expect(slots.get('agent.bytes')).toBe(0);
+    expect(slots.get('agent.queued')).toBe(1);
+    expect(slots.get('cpu.cpu_temperature_c')).toBe(2);
   });
 });

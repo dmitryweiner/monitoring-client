@@ -143,14 +143,25 @@ reports whether the device is delivering, the newest value of every metric, the
 agent's queue, warnings for stale data, an unsynchronised clock and camera
 failures in the last 24 hours, and the most recent photo.
 
-**Charts** draw every discovered metric as a column of aligned panels with one
-shared time axis and a single crosshair. Series are grouped by unit, one panel
-per unit: degrees and byte counts on one pair of axes would imply a
-relationship that is not in the data. Ranges up to a week are drawn from raw
-events; longer ranges use the server's aggregation, showing the bucket mean
-with its min/max band. A break in delivery draws as a gap, not a straight line.
-Each panel's legend doubles as the value readout and switches series on and
-off, and each has a table view with the same numbers.
+**Charts** carry a filter block above everything: the time range, the layout,
+and a checkbox for every series with a Select all button beside them. The
+range, the layout and the cleared series are remembered in `localStorage`, and
+everything is shown until a checkbox is cleared.
+
+The default layout is one panel per unit, aligned in a column sharing one time
+axis and a single crosshair. Degrees and byte counts on one pair of axes would
+imply a relationship that is not in the data, so each unit gets its own panel.
+The other layout puts everything on one plot. When the selected series share a
+unit that plot keeps the real axis; when they do not, each series is rescaled
+to its own range and the axis says so, while the legend and the table keep the
+measured values. One plot carries at most eight series, which is what the
+colour palette is validated for.
+
+Ranges up to a week are drawn from raw events; longer ranges use the server's
+aggregation, showing the bucket mean with its min/max band. A break in delivery
+draws as a gap, not a straight line. Each panel's legend doubles as the value
+readout and switches series on and off, and each has a table view with the same
+numbers.
 
 **Photos** opens on the newest photo, steps with the previous and next buttons
 or the arrow keys, jumps to a date within the 30-day archive, and downloads the
