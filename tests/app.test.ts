@@ -73,8 +73,19 @@ function photo(observedAt: number): StoredEvent {
  * the camera. The API lists the older one first, so anything that takes the
  * first match shows a stale photo.
  */
-const OLD_PHOTO = { ...photo(NOW - 14_400), source: 'acceptance' };
+/**
+ * Up to `seconds` before `timestamp`, but never across local midnight. The
+ * viewer counts photos per local day, so a fixed four-hour offset put the two
+ * photos on different days whenever the suite ran before 04:00.
+ */
+function sameDayEarlier(timestamp: number, seconds: number): number {
+  const midnight = new Date(timestamp * 1000);
+  midnight.setHours(0, 0, 0, 0);
+  return timestamp - Math.min(seconds, (timestamp - midnight.getTime() / 1000) / 2);
+}
+
 const NEW_PHOTO = { ...photo(NOW - 40), source: 'camera' };
+const OLD_PHOTO = { ...photo(sameDayEarlier(NOW - 40, 14_400)), source: 'acceptance' };
 
 const LATEST = {
   device_id: 'home',

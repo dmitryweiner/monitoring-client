@@ -60,13 +60,18 @@ for (let step = 0; step < 24; step += 1) {
 history.sort((left, right) => left.observed_at - right.observed_at);
 
 // Two photo sources, as the live archive has. The API lists the older one
-// first, so taking the first match would show a stale photo.
+// first, so taking the first match would show a stale photo. Both sit in the
+// same local day, because the viewer counts photos per day; a fixed four-hour
+// offset split them across midnight whenever the check ran before 04:00.
+const newPhoto = { ...measurement('camera', {}, 40), kind: 'photo', event_id: 'photo-new' };
+const localMidnight = new Date(newPhoto.observed_at * 1000);
+localMidnight.setHours(0, 0, 0, 0);
+const oldPhotoAge = Math.min(14_400, (newPhoto.observed_at - localMidnight.getTime() / 1000) / 2);
 const oldPhoto = {
-  ...measurement('acceptance', {}, 14_400),
+  ...measurement('acceptance', {}, 40 + oldPhotoAge),
   kind: 'photo',
   event_id: 'photo-old',
 };
-const newPhoto = { ...measurement('camera', {}, 40), kind: 'photo', event_id: 'photo-new' };
 
 const latest = {
   device_id: 'home',
