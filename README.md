@@ -166,8 +166,11 @@ measured values. One plot carries at most eight series, which is what the
 colour palette is validated for.
 
 Ranges up to a week are drawn from raw events; longer ranges use the server's
-aggregation, showing the bucket mean with its min/max band. A break in delivery
-draws as a gap, not a straight line. Each panel's legend doubles as the value
+aggregation, showing the bucket mean with its min/max band. The agent reads its
+sources in turn, so one cycle's events arrive seconds apart; they are grouped
+into one point on the time axis, placed at the first event of the cycle. A
+break in delivery, or a sensor that returned no value, draws as a gap rather
+than a straight line. Each panel's legend doubles as the value
 readout and switches series on and off, and each has a table view with the same
 numbers.
 
@@ -176,8 +179,9 @@ or the arrow keys, jumps to a date within the 30-day archive, and downloads the
 current JPEG. Home and End go to the newest and oldest photo.
 
 Metrics are discovered from the data rather than hard-coded, and the unit is
-inferred from the metric name, so the BMP280 and DHT11 sensors will appear on
-the right panels once the agent starts sending them.
+inferred from the metric name. The BMP280 and DHT11 sensors, delivered as the
+sources `barometer` and `room`, appeared on the right panels without a code
+change.
 
 ## Layout
 

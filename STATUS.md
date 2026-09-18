@@ -1,4 +1,4 @@
-# Project status — 2026-09-15
+# Project status — 2026-09-18
 
 What has been built and what was actually verified. The target is described in
 [PLAN.md](PLAN.md); this file records facts, not intentions. The backend it
@@ -9,16 +9,58 @@ reads is [dmitryweiner/monitoring](https://github.com/dmitryweiner/monitoring).
 Milestones 1 to 8 of the plan are done: scaffold, API client and
 authentication, overview, charts, photo viewer, the backend origin change, the
 deployment, and the review changes below. The application builds, type-checks,
-passes 103 tests, and the built bundle has been driven through all three pages.
+passes 113 tests, and the built bundle has been driven through all three pages.
 
 | Area | State |
 | --- | --- |
 | Build | Vite 7, TypeScript strict, output committed to `docs/`, `base` `/monitoring-client/` |
-| Bundle | 94.2 kB JavaScript (37.6 kB gzipped), 9.5 kB CSS; no source map in the committed build |
-| Tests | 103 passing across 7 files: model, API client, session, and views in a DOM |
+| Bundle | 94.4 kB JavaScript (37.7 kB gzipped), 9.5 kB CSS; no source map in the committed build |
+| Tests | 113 passing across 7 files: model, API client, session, and views in a DOM |
 | Bundle check | `npm run smoke` drives the built bundle through all three pages: 44 checks passing |
 | Dependencies | uPlot at runtime; Vite, TypeScript, Vitest, Prettier, happy-dom for development. `npm audit` reports 0 vulnerabilities |
 | Deployment | Live at https://dmitryweiner.github.io/monitoring-client/ from `main:/docs` |
+
+## Chart gaps fixed — 18 September
+
+Reported in `TODO.md` after the backend project traced "missing DHT11 readings"
+to the chart rather than the data.
+
+- **Cause.** Raw measurements were placed on the time axis by rounding each
+  event to the nearest minute, on the assumption that one cycle's events are
+  milliseconds apart. The agent reads its sources in turn: a DHT11 read retries
+  every 2 s and can take about 10 s, and the agent status follows it. A cycle
+  that straddled the half minute split across two ticks, leaving a `null`
+  beside every point, which uPlot draws as a gap.
+- **Fix.** Events are grouped into cycles instead of rounded. A new tick starts
+  when an event is more than 60 s after the first event of the current tick, or
+  when its source already appears in that tick, and the tick sits at the time
+  of its first event. Events without a value do not anchor a tick. Measured
+  times are never altered.
+- **Second case found while checking.** Time alone merged two cycles that a
+  restarted agent ran 4.7 s and 29 s apart, and one reading of each series was
+  dropped when both landed on one tick. A repeated source now marks the cycle
+  boundary, so both readings are kept.
+- **Checked on real data.** The last 24 hours from the live API, 353 events in
+  116 cycles, run through the chart builder with both methods:
+
+  | | Minute rounding | Cycle grouping |
+  | --- | --- | --- |
+  | Cycles split across two ticks | 16 of 116, 13.8 % | 0 |
+  | Breaks between two present readings | 122 | 10 |
+  | Readings lost before the plot | 14 of 802 | 0 of 802 |
+
+  The split rate agrees with the 15 % estimated in `TODO.md`. The 14 lost
+  readings are the two back-to-back cycles, two per series across seven series.
+
+  The 10 remaining breaks are all in `room` temperature and humidity and fall
+  on cycles with no `room` value, five of them with an explicit error event.
+  Those are real missing readings and are meant to draw as gaps.
+- **A flaky test surfaced and was fixed.** The photo viewer test put its older
+  photo four hours before the newer one and expected both in the same local
+  day, so it failed whenever the suite ran before 04:00. Both the test and the
+  bundle smoke check now keep the two photos within one day. The suite and the
+  smoke check were run under six time zones, including local times of 00:44
+  and 02:44, and pass in all of them.
 
 ## Changed after review — 15 September
 
@@ -156,11 +198,13 @@ Worker was redeployed. This is the only backend change the client needs.
   so a `wrangler deploy` from a fresh clone keeps the origin the client needs.
   Verified on 15 September: the file on `main` carries
   `"ALLOWED_ORIGINS": "https://dmitryweiner.github.io"`.
-- Sensor support for BMP280 and DHT11 is the second part of the work. No code
-  change should be needed for them to plot: series are discovered from the data
-  and the unit comes from the metric name, with rules already in place for
-  `*_c`, `*_hpa`, `*_pct` and `humidity`. Their real metric names are unknown,
-  so the inference rules should be checked once the agent sends them.
+- The BMP280 and DHT11 sensors are now delivering, as the sources `barometer`
+  and `room`, and plot without a code change. Checked on real data on
+  18 September: `barometer.temperature_c` and `room.temperature_c` join
+  `cpu.cpu_temperature_c` on the temperature panel, `room.humidity_percent`
+  gets the humidity panel and `barometer.pressure_hpa` the pressure panel.
+  The temperature panel now holds three series, which is the most one panel
+  carries; a fourth temperature would move to a second panel automatically.
 - At most three series share one chart panel, which is the limit the colour
   palette was validated for. A unit with more series is split across further
   panels automatically.

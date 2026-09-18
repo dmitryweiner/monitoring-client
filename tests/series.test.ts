@@ -320,3 +320,122 @@ describe('combinePanels', () => {
     expect(slots.get('cpu.cpu_temperature_c')).toBe(2);
   });
 });
+
+/**
+ * The agent reads its sources one after another, so the events of one cycle
+ * carry their own observed_at seconds apart: DHT11 (`room`) retries every 2 s
+ * and can take up to ~10 s, and `agent` is written after it. Rounding each
+ * event to the nearest minute split a cycle that straddled :30 across two
+ * ticks, leaving every line with a null beside each point.
+ */
+describe('cycle grouping', () => {
+  // T0 is a whole minute, so +28 s rounds down and +34 s rounds up.
+  const cycle = (start: number) => [
+    event('cpu', start + 28, { cpu_temperature_c: 42 }),
+    event('room', start + 34, { temperature_c: 23, humidity_pct: 40 }),
+    event('agent', start + 34.1, { queued: 1 }),
+  ];
+
+  const ticks = (inputs: ReturnType<typeof seriesFromEvents>) =>
+    new Set(inputs.flatMap((input) => input.points.map((point) => point.t)));
+
+  it('puts a cycle that straddles the half minute on one tick', () => {
+    expect(ticks(seriesFromEvents(cycle(T0))).size).toBe(1);
+  });
+
+  it('keeps cycles 600 s apart on separate ticks', () => {
+    expect(ticks(seriesFromEvents([...cycle(T0), ...cycle(T0 + 600)])).size).toBe(2);
+  });
+
+  it('draws unbroken lines through such cycles', () => {
+    const data = buildChartData(
+      seriesFromEvents([...cycle(T0), ...cycle(T0 + 600), ...cycle(T0 + 1200)]),
+      1500,
+    );
+    expect(data.timestamps).toHaveLength(3);
+    for (const panel of data.panels) {
+      for (const series of panel.series) expect(series.values).not.toContain(null);
+    }
+  });
+
+  it('places the tick at the first event of the cycle', () => {
+    expect([...ticks(seriesFromEvents(cycle(T0)))]).toEqual([T0 + 28]);
+  });
+
+  it('measures the window from the first event, so a long cycle cannot chain on', () => {
+    const inputs = seriesFromEvents([
+      event('cpu', T0, { cpu_temperature_c: 42 }),
+      event('room', T0 + 50, { temperature_c: 23 }),
+      event('agent', T0 + 100, { queued: 1 }),
+    ]);
+    // 100 s is only 50 s after the previous event but 100 s after the first.
+    expect([...ticks(inputs)].sort()).toEqual([T0, T0 + 100]);
+  });
+
+  it('groups events that arrive out of order', () => {
+    const [cpu, room, agent] = cycle(T0);
+    expect(ticks(seriesFromEvents([agent!, cpu!, room!])).size).toBe(1);
+  });
+
+  it('does not let an event without values anchor a tick', () => {
+    const inputs = seriesFromEvents([
+      event('camera', T0, {}, 'error'),
+      event('cpu', T0 + 55, { cpu_temperature_c: 42 }),
+      event('agent', T0 + 70, { queued: 1 }),
+    ]);
+    // Anchored at the empty camera event, +70 would have split from +55.
+    expect(ticks(inputs).size).toBe(1);
+  });
+});
+
+describe('back-to-back cycles', () => {
+  /**
+   * A restarted agent can run a second cycle seconds after the first. Seen on
+   * 17 September at 4.7 s and 29 s apart. Time alone cannot separate them, so
+   * a source seen again also starts a new cycle; otherwise one of the two
+   * readings would be dropped when both land on the same tick.
+   */
+  it('starts a new tick when a source repeats, keeping both readings', () => {
+    const inputs = seriesFromEvents([
+      event('cpu', T0, { cpu_temperature_c: 40 }),
+      event('room', T0 + 4.3, { temperature_c: 23 }),
+      event('agent', T0 + 4.3, { queued: 1 }),
+      event('cpu', T0 + 4.7, { cpu_temperature_c: 41 }),
+      event('room', T0 + 4.9, { temperature_c: 24 }),
+      event('agent', T0 + 4.9, { queued: 2 }),
+    ]);
+    const cpu = inputs.find((input) => input.key === 'cpu.cpu_temperature_c')!;
+    expect(cpu.points).toEqual([
+      { t: T0, value: 40 },
+      { t: T0 + 4.7, value: 41 },
+    ]);
+    const room = inputs.find((input) => input.key === 'room.temperature_c')!;
+    expect(room.points.map((point) => point.t)).toEqual([T0, T0 + 4.7]);
+  });
+
+  it('keeps every reading through the chart builder', () => {
+    const data = buildChartData(
+      seriesFromEvents([
+        event('cpu', T0, { cpu_temperature_c: 40 }),
+        event('agent', T0 + 0.4, { queued: 1 }),
+        event('cpu', T0 + 29.3, { cpu_temperature_c: 41 }),
+        event('agent', T0 + 29.6, { queued: 2 }),
+      ]),
+      1500,
+    );
+    const cpu = data.panels
+      .flatMap((panel) => panel.series)
+      .find((s) => s.metric === 'cpu_temperature_c')!;
+    expect(cpu.values).toEqual([40, 41]);
+  });
+
+  it('does not split a cycle whose sources are all distinct', () => {
+    const inputs = seriesFromEvents([
+      event('cpu', T0 + 28, { cpu_temperature_c: 42 }),
+      event('room', T0 + 34, { temperature_c: 23, humidity_pct: 40 }),
+      event('agent', T0 + 34.1, { queued: 1 }),
+    ]);
+    const ticks = new Set(inputs.flatMap((input) => input.points.map((point) => point.t)));
+    expect(ticks.size).toBe(1);
+  });
+});

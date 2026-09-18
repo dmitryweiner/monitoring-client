@@ -101,14 +101,52 @@ export function humanizeMetric(metric: string): string {
     .join(' ');
 }
 
-/** Collect one input series per (source, metric) found in raw measurements. */
-export function seriesFromEvents(events: StoredEvent[], alignSeconds = 60): SeriesInput[] {
+/** True when an event carries at least one plottable number. */
+function hasValues(event: StoredEvent): boolean {
+  return Object.values(event.values).some(
+    (value) => typeof value === 'number' && Number.isFinite(value),
+  );
+}
+
+/**
+ * Collect one input series per (source, metric) found in raw measurements.
+ *
+ * The agent reads its sources one after another, so the events of one cycle
+ * carry their own observed_at seconds apart: a DHT11 read retries every 2 s and
+ * can take about 10 s, and the agent status is written after it. Rounding each
+ * event to a minute split any cycle that straddled the half minute across two
+ * ticks, which drew a gap beside every point.
+ *
+ * Events are grouped into cycles instead. A new tick starts when an event is
+ * more than `cycleWindowSeconds` after the first event of the current tick, or
+ * when its source already appears in the current tick, and the tick sits at
+ * the time of its first event. Measuring from the first event rather than the
+ * previous one stops a slow cycle from chaining into the next. The repeated
+ * source separates two cycles run back to back, which a restarted agent does
+ * seconds apart; time alone would merge them and drop one reading of each.
+ *
+ * Events without a value, such as a failed camera capture or a failed sensor
+ * read, neither contribute a point nor anchor a tick, so they cannot count as
+ * a repeat either. The measured times themselves are never altered.
+ */
+export function seriesFromEvents(events: StoredEvent[], cycleWindowSeconds = 60): SeriesInput[] {
+  const measured = events
+    .filter((event) => event.kind === 'measurement' && hasValues(event))
+    .sort((left, right) => left.observed_at - right.observed_at);
+
   const inputs = new Map<string, SeriesInput>();
-  for (const event of events) {
-    if (event.kind !== 'measurement') continue;
-    // Events collected in one cycle are milliseconds apart; rounding to a common
-    // tick lets them share an x position instead of producing interleaved gaps.
-    const t = Math.round(event.observed_at / alignSeconds) * alignSeconds;
+  let tick: number | null = null;
+  const sourcesInTick = new Set<string>();
+  for (const event of measured) {
+    if (
+      tick === null ||
+      event.observed_at - tick > cycleWindowSeconds ||
+      sourcesInTick.has(event.source)
+    ) {
+      tick = event.observed_at;
+      sourcesInTick.clear();
+    }
+    sourcesInTick.add(event.source);
     for (const [metric, value] of Object.entries(event.values)) {
       if (typeof value !== 'number' || !Number.isFinite(value)) continue;
       const key = `${event.source}.${metric}`;
@@ -117,7 +155,7 @@ export function seriesFromEvents(events: StoredEvent[], alignSeconds = 60): Seri
         input = { key, source: event.source, metric, points: [] };
         inputs.set(key, input);
       }
-      input.points.push({ t, value });
+      input.points.push({ t: tick, value });
     }
   }
   return [...inputs.values()];
