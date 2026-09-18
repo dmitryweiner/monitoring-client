@@ -160,10 +160,11 @@ The default layout is one panel per unit, aligned in a column sharing one time
 axis and a single crosshair. Degrees and byte counts on one pair of axes would
 imply a relationship that is not in the data, so each unit gets its own panel.
 The other layout puts everything on one plot. When the selected series share a
-unit that plot keeps the real axis; when they do not, each series is rescaled
-to its own range and the axis says so, while the legend and the table keep the
-measured values. One plot carries at most eight series, which is what the
-colour palette is validated for.
+unit that plot keeps the real axis. When they do not, each unit is rescaled to
+its own range and the axis says so, while the legend and the table keep the
+measured values. Series sharing a unit share that range, so two temperatures
+keep their order and their relative size. One plot carries at most eight
+series, which is what the colour palette is validated for.
 
 Ranges up to a week are drawn from raw events; longer ranges use the server's
 aggregation, showing the bucket mean with its min/max band. The agent reads its

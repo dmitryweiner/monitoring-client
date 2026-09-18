@@ -439,3 +439,53 @@ describe('back-to-back cycles', () => {
     expect(ticks.size).toBe(1);
   });
 });
+
+/**
+ * Reported 18 September: One chart, Last hour, barometer pressure and
+ * temperature with room humidity and temperature selected, and only two lines
+ * on screen. The barometer had just come online, so each series had two
+ * samples in the hour. Rescaling every series to its own range turns any two
+ * samples into 0 → 100 or 100 → 0, and three of the four were drawn on top of
+ * each other. The values are the real ones from that window.
+ */
+describe('combined plot with few samples', () => {
+  const window = [
+    event('room', T0, { humidity_percent: 46.3, temperature_c: 24.3 }),
+    event('barometer', T0 + 0.2, { pressure_hpa: 1005.8128, temperature_c: 22.3199 }),
+    event('room', T0 + 600, { humidity_percent: 49.2, temperature_c: 23.2 }),
+    event('barometer', T0 + 600.2, { pressure_hpa: 1005.7367, temperature_c: 22.0124 }),
+  ];
+
+  const plotted = () => {
+    const panel = combinePanels(buildChartData(seriesFromEvents(window), 1500)).panels[0]!;
+    return new Map(panel.series.map((series) => [series.key, series.values]));
+  };
+
+  it('keeps four selected series as four distinct lines', () => {
+    const lines = plotted();
+    const shapes = new Set([...lines.values()].map((values) => JSON.stringify(values)));
+    expect(lines.size).toBe(4);
+    expect(shapes.size).toBe(4);
+  });
+
+  it('puts series of one unit on a shared scale, so their order survives', () => {
+    const lines = plotted();
+    const room = lines.get('room.temperature_c')!;
+    const barometer = lines.get('barometer.temperature_c')!;
+    // The room was warmer at both samples, and the plot has to show it.
+    for (let index = 0; index < room.length; index += 1) {
+      expect(room[index]!).toBeGreaterThan(barometer[index]!);
+    }
+    // The shared range spans both, so neither is stretched to fill it alone.
+    expect(Math.max(...(room as number[]))).toBe(100);
+    expect(Math.min(...(barometer as number[]))).toBe(0);
+    expect(Math.min(...(room as number[]))).toBeGreaterThan(0);
+    expect(Math.max(...(barometer as number[]))).toBeLessThan(100);
+  });
+
+  it('still reads the measured values back for the legend', () => {
+    const panel = combinePanels(buildChartData(seriesFromEvents(window), 1500)).panels[0]!;
+    const room = panel.series.find((series) => series.key === 'room.temperature_c')!;
+    expect(room.displayValues).toEqual([24.3, 23.2]);
+  });
+});

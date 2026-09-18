@@ -297,24 +297,30 @@ function toSeries(
   };
 }
 
-/** Smallest and largest finite value across a series and any band it carries. */
-function extent(series: Series): { min: number; max: number } | null {
+interface Bounds {
+  min: number;
+  max: number;
+}
+
+/** Smallest and largest finite value across some series and any bands they carry. */
+function extent(list: Series[]): Bounds | null {
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
-  for (const list of [series.values, series.minimum, series.maximum]) {
-    if (!list) continue;
-    for (const value of list) {
-      if (value === null) continue;
-      if (value < min) min = value;
-      if (value > max) max = value;
+  for (const series of list) {
+    for (const values of [series.values, series.minimum, series.maximum]) {
+      if (!values) continue;
+      for (const value of values) {
+        if (value === null) continue;
+        if (value < min) min = value;
+        if (value > max) max = value;
+      }
     }
   }
   return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
 }
 
-/** Map a series onto 0..100 of its own range, keeping the measured values. */
-function rescale(series: Series, colorIndex: number): Series {
-  const bounds = extent(series);
+/** Map a series onto 0..100 of the given range, keeping the measured values. */
+function rescale(series: Series, colorIndex: number, bounds: Bounds | null): Series {
   const map = (value: number | null): number | null => {
     if (value === null || !bounds) return null;
     // A series that never changes sits mid-axis rather than on an edge.
@@ -336,8 +342,13 @@ function rescale(series: Series, colorIndex: number): Series {
  * Fold every panel into one plot.
  *
  * Series that already share a unit keep their real axis. Mixed units cannot
- * share an axis honestly, so each series is rescaled to its own range and the
+ * share an axis honestly, so each unit is rescaled to its own range and the
  * axis says so; the legend and the table still carry the measured values.
+ *
+ * The range belongs to the unit, not to the series. Rescaling each series on
+ * its own stretched every one to fill the axis: two temperatures lost their
+ * order, and with two samples in the window any series became a plain
+ * 0 → 100 or 100 → 0, so several drew on top of one another.
  */
 export function combinePanels(data: ChartData): ChartData {
   const all = data.panels.flatMap((panel) => panel.series);
@@ -347,8 +358,16 @@ export function combinePanels(data: ChartData): ChartData {
   const ordered = [...all].sort((left, right) => left.key.localeCompare(right.key));
   const sameUnit = new Set(ordered.map((series) => series.unit.id)).size === 1;
   const unit = sameUnit ? (ordered[0] as Series).unit : UNITS.NORMALIZED;
+  const bounds = new Map<string, Bounds | null>();
+  for (const item of ordered) {
+    if (!bounds.has(item.unit.id)) {
+      bounds.set(item.unit.id, extent(ordered.filter((other) => other.unit.id === item.unit.id)));
+    }
+  }
   const series = ordered.map((item, index) =>
-    sameUnit ? { ...item, colorIndex: index } : rescale(item, index),
+    sameUnit
+      ? { ...item, colorIndex: index }
+      : rescale(item, index, bounds.get(item.unit.id) ?? null),
   );
 
   return {
@@ -361,7 +380,7 @@ export function combinePanels(data: ChartData): ChartData {
         aggregated: series.some((item) => item.minimum !== null),
         note: sameUnit
           ? null
-          : 'The series use different units, so each is rescaled to its own range. Values in the legend and the table are as measured.',
+          : 'The series use different units, so each unit is rescaled to its own range, and series sharing a unit share that range. Values in the legend and the table are as measured.',
       },
     ],
   };

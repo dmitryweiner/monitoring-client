@@ -9,16 +9,45 @@ reads is [dmitryweiner/monitoring](https://github.com/dmitryweiner/monitoring).
 Milestones 1 to 8 of the plan are done: scaffold, API client and
 authentication, overview, charts, photo viewer, the backend origin change, the
 deployment, and the review changes below. The application builds, type-checks,
-passes 113 tests, and the built bundle has been driven through all three pages.
+passes 116 tests, and the built bundle has been driven through all three pages.
 
 | Area | State |
 | --- | --- |
 | Build | Vite 7, TypeScript strict, output committed to `docs/`, `base` `/monitoring-client/` |
 | Bundle | 94.4 kB JavaScript (37.7 kB gzipped), 9.5 kB CSS; no source map in the committed build |
-| Tests | 113 passing across 7 files: model, API client, session, and views in a DOM |
+| Tests | 116 passing across 7 files: model, API client, session, and views in a DOM |
 | Bundle check | `npm run smoke` drives the built bundle through all three pages: 44 checks passing |
 | Dependencies | uPlot at runtime; Vite, TypeScript, Vitest, Prettier, happy-dom for development. `npm audit` reports 0 vulnerabilities |
 | Deployment | Live at https://dmitryweiner.github.io/monitoring-client/ from `main:/docs` |
+
+## Combined plot showed fewer lines than selected — 18 September
+
+Reported with these steps: One chart, Last hour, and barometer pressure and
+temperature with room humidity and temperature selected. Four series were
+chosen and two lines appeared.
+
+- **Cause.** On a combined plot with mixed units every series was rescaled to
+  its own range. With two samples in the window, which was the case right after
+  the barometer came online, any series becomes a plain 0 → 100 or 100 → 0.
+  Three of the four fell and were drawn exactly on top of one another. The same
+  rule also stretched both temperatures to fill the axis on their own, so the
+  plot did not show that the room was warmer than the barometer.
+- **How it was confirmed.** uPlot was traced in the built bundle on the real
+  last hour, with the real stylesheet loaded: four lines were stroked in four
+  colours, so drawing was correct and the values were the problem. On the two
+  samples per series the reader had, the four series gave two distinct lines.
+- **Fix.** The range now belongs to the unit. Series sharing a unit share one
+  range, so they keep their order and relative size; each other unit still
+  gets its own. On the same real window this gives four distinct lines, both
+  for two samples per series and for the full hour, and the room temperature
+  stays above the barometer's throughout.
+- **What is left.** Units with a single series each are still scaled to their
+  own ranges. Two such series with only two samples each, moving the same way,
+  would still coincide, because two samples carry nothing else to tell them
+  apart. That only happens for the first cycles after a sensor comes online;
+  with the six samples of a normal hour it would need identical shapes.
+  Drawing each unit in its own horizontal lane would rule it out entirely, at
+  the cost of a different look for the combined plot.
 
 ## Chart gaps fixed — 18 September
 
@@ -111,9 +140,10 @@ panels behave as one chart.
 
 A later review asked for a switch between one chart and separate charts. The
 combined layout keeps the real axis when the selected series share a unit. When
-they do not, it rescales each series to its own range rather than seating two
+they do not, it rescales each unit to its own range rather than seating two
 y-scales on one plot, and says so under the title; the legend and the table
-still show the measured values. That layout may carry eight series, the count
+still show the measured values. Until 18 September the range belonged to each
+series rather than each unit; see the entry for that day. That layout may carry eight series, the count
 the palette validates for lines compared with their neighbours; separate panels
 stay capped at three, the count that holds when any two panels are compared.
 

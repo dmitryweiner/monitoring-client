@@ -94,13 +94,13 @@ const SECONDS: Unit = {
 };
 
 /**
- * The axis used when one plot carries series of different units. Each series is
+ * The axis used when one plot carries series of different units. Each unit is
  * rescaled to its own range, so the shapes can be compared while the legend and
  * the table keep the measured values in their real units.
  */
 const NORMALIZED: Unit = {
   id: 'normalized',
-  label: 'Rescaled to each series own range, %',
+  label: 'Rescaled to each unit range, %',
   suffix: '%',
   format: (value) => `${value.toFixed(0)} %`,
   formatTick: (value) => value.toFixed(0),
