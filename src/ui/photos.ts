@@ -5,18 +5,41 @@
  * date. The JPEG is private, so it is fetched with the session header and shown
  * through a blob URL rather than a plain image source. A small cache of recent
  * blobs makes stepping back and forth instant.
+ *
+ * Above the viewer a timeline shows where photos and audio clips fall in the
+ * chosen range. Below the photo sits the audio clip recorded around it, when
+ * there is one, in the browser's own player; the clip is private as well and
+ * reaches the player the same way as the JPEG.
  */
 
 import { PHOTO_RETENTION_DAYS, SECONDS_PER_DAY } from '../config.ts';
 import type { StoredEvent } from '../api/types.ts';
 import { PhotoNavigator, newestPhoto } from '../model/photoNav.ts';
-import { dayKeyToTimestamp, localDayRange } from '../model/range.ts';
+import { dayKeyToTimestamp, localDayKey, localDayRange } from '../model/range.ts';
+import { audioForPhoto, clipInterval } from '../model/timeline.ts';
 import { describeError, isAbort, type AppContext, type View } from './context.ts';
 import { clear, el, field } from './dom.ts';
-import { dateInputValue, filenameStamp, formatBytes, formatLocal, formatUtc } from './format.ts';
+import {
+  dateInputValue,
+  filenameStamp,
+  formatBytes,
+  formatLocal,
+  formatLocalTime,
+  formatUtc,
+} from './format.ts';
+import { Timeline } from './timeline.ts';
 
 /** Recently viewed photos kept decoded, so previous/next does not refetch. */
 const CACHE_LIMIT = 10;
+
+/**
+ * A clip that starts shortly before local midnight can hold a photo taken just
+ * after it, so each day's clip listing reaches this far into the day before.
+ */
+const CLIP_LOOKBACK_SECONDS = 120;
+
+/** Ogg/Opus, as the agent records it. Safari before 18.4 cannot play it. */
+const AUDIO_TYPE = 'audio/ogg; codecs="opus"';
 
 interface CachedPhoto {
   url: string;
@@ -64,6 +87,7 @@ export class PhotosView implements View {
   readonly element: HTMLElement;
 
   private readonly frame = el('div', { class: 'photo__frame' });
+  private readonly audioHost = el('div', { class: 'photo__audio' });
   private readonly meta = el('div', { class: 'photo__meta' });
   private readonly navHost = el('div', { class: 'photo__nav' });
   private readonly dateInput = el('input', {
@@ -78,6 +102,10 @@ export class PhotosView implements View {
 
   private readonly navigator: PhotoNavigator;
   private readonly cache: BlobCache;
+  private readonly audioCache: BlobCache;
+  private readonly timeline: Timeline;
+  /** Audio clips per local day, loaded when a photo of that day is shown. */
+  private readonly clipDays = new Map<string, StoredEvent[]>();
   private controller: AbortController | null = null;
   private busy = false;
   private readonly onKeyDown = (event: KeyboardEvent) => this.handleKey(event);
@@ -89,6 +117,12 @@ export class PhotosView implements View {
       now: () => Date.now() / 1000,
     });
     this.cache = new BlobCache((eventId, signal) => this.context.api.photoBlob(eventId, signal));
+    this.audioCache = new BlobCache((eventId, signal) =>
+      this.context.api.audioBlob(eventId, signal),
+    );
+    this.timeline = new Timeline(context, {
+      onPick: (photo) => void this.go(() => this.navigator.select(photo)),
+    });
 
     this.newestButton = this.button('Newest', () => this.go(() => this.navigator.newest()));
     this.previousButton = this.button('← Previous', () => this.go(() => this.navigator.previous()));
@@ -117,12 +151,14 @@ export class PhotosView implements View {
 
     this.element = el('section', { class: 'photo' }, [
       el('h2', { text: 'Camera archive' }),
+      this.timeline.element,
       this.navHost,
       this.frame,
+      this.audioHost,
       this.meta,
       el('p', {
         class: 'stat__note',
-        text: `Photos are kept for ${PHOTO_RETENTION_DAYS} days. Use the arrow keys to step, Home and End for the newest and oldest.`,
+        text: `Photos and audio are kept for ${PHOTO_RETENTION_DAYS} days. Click the timeline to open the photo nearest that moment. Use the arrow keys to step, Home and End for the newest and oldest.`,
       }),
     ]);
   }
@@ -130,6 +166,7 @@ export class PhotosView implements View {
   mount(): void {
     document.addEventListener('keydown', this.onKeyDown);
     void this.go(() => this.start());
+    void this.timeline.load();
   }
 
   /**
@@ -150,7 +187,10 @@ export class PhotosView implements View {
   destroy(): void {
     document.removeEventListener('keydown', this.onKeyDown);
     this.controller?.abort();
+    this.timeline.destroy();
+    this.stopAudio();
     this.cache.clear();
+    this.audioCache.clear();
   }
 
   private button(label: string, onClick: () => void): HTMLButtonElement {
@@ -164,7 +204,14 @@ export class PhotosView implements View {
 
   private handleKey(event: KeyboardEvent): void {
     const target = event.target;
-    if (target instanceof HTMLInputElement || event.metaKey || event.ctrlKey || event.altKey)
+    // The audio player takes the arrow keys for seeking.
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLMediaElement ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey
+    )
       return;
     const actions: Record<string, (() => Promise<StoredEvent | null>) | undefined> = {
       ArrowLeft: () => this.navigator.previous(),
@@ -178,7 +225,7 @@ export class PhotosView implements View {
     void this.go(action);
   }
 
-  /** One local calendar day of photo metadata; at most 144 items. */
+  /** One local calendar day of photo metadata; up to 1440 items in attention mode. */
   private async loadDay(dayKey: string): Promise<StoredEvent[]> {
     const timestamp = dayKeyToTimestamp(dayKey);
     if (timestamp === null) return [];
@@ -231,11 +278,13 @@ export class PhotosView implements View {
     const photo = this.navigator.photo;
     this.downloadButton.disabled = !photo || !this.cache.has(photo.event_id);
     if (photo) this.dateInput.value = dateInputValue(photo.observed_at);
+    this.timeline.setCurrent(photo);
   }
 
   private showEmpty(): void {
     clear(this.frame);
     clear(this.meta);
+    this.clearAudio();
     this.frame.append(
       el('p', { class: 'empty', text: 'No photo was found in the retained archive.' }),
     );
@@ -249,6 +298,7 @@ export class PhotosView implements View {
       if (isAbort(error)) return;
       clear(this.frame);
       clear(this.meta);
+      this.clearAudio();
       // Retention can remove a photo between listing it and fetching it.
       this.frame.append(el('p', { class: 'empty', text: describeError(error) }));
       return;
@@ -268,6 +318,7 @@ export class PhotosView implements View {
     );
 
     const position = this.navigator.position();
+    const changed = photo.values['changed_percent'];
     clear(this.meta);
     this.meta.append(
       field('Taken', formatLocal(photo.observed_at)),
@@ -278,6 +329,102 @@ export class PhotosView implements View {
         ? field('In day', `${position.indexInDay} of ${position.countInDay}`)
         : field('In day', '—'),
     );
+    if (photo.values['attention'] === 1) this.meta.append(field('Mode', 'attention'));
+    if (changed !== undefined) this.meta.append(field('Changed', `${changed.toFixed(1)} %`));
+
+    this.clearAudio();
+    void this.showAudio(photo, signal);
+  }
+
+  /** Clips recorded on the photo's local day, plus the tail of the day before. */
+  private async clipsAround(photo: StoredEvent, signal: AbortSignal): Promise<StoredEvent[]> {
+    const dayKey = localDayKey(photo.observed_at);
+    const cached = this.clipDays.get(dayKey);
+    if (cached) return cached;
+    const range = localDayRange(photo.observed_at);
+    const clips = await this.context.api.allAudio({
+      start: range.start - CLIP_LOOKBACK_SECONDS,
+      end: range.end,
+      signal,
+    });
+    // Today is still being recorded, so only finished days are kept.
+    if (range.end < Date.now() / 1000) this.clipDays.set(dayKey, clips);
+    return clips;
+  }
+
+  /**
+   * The player for the clip recorded around the photo. It loads after the
+   * photo is on screen, so stepping through photos never waits for audio.
+   */
+  private async showAudio(photo: StoredEvent, signal: AbortSignal): Promise<void> {
+    const stillShown = () => !signal.aborted && this.navigator.photo?.event_id === photo.event_id;
+    try {
+      const clip = audioForPhoto(photo, await this.clipsAround(photo, signal));
+      if (!stillShown()) return;
+      if (!clip) {
+        if (photo.values['attention'] === 1) {
+          this.audioHost.append(
+            el('p', {
+              class: 'stat__note',
+              text: 'No audio around this photo: the room was quieter than the recording threshold.',
+            }),
+          );
+        }
+        return;
+      }
+
+      const entry = await this.audioCache.get(clip.event_id, signal);
+      if (!stillShown()) return;
+      this.renderAudio(clip, entry);
+    } catch (error) {
+      if (isAbort(error) || !stillShown()) return;
+      this.audioHost.append(el('p', { class: 'stat__note', text: describeError(error) }));
+    }
+  }
+
+  private renderAudio(clip: StoredEvent, entry: CachedPhoto): void {
+    const interval = clipInterval(clip);
+    const peak = clip.values['peak_dbfs'];
+    const player = el('audio', {
+      class: 'photo__player',
+      attrs: {
+        controls: 'controls',
+        preload: 'metadata',
+        src: entry.url,
+        'aria-label': `Audio from ${formatLocal(interval.start)}`,
+      },
+    });
+    const playable = player.canPlayType(AUDIO_TYPE) !== '';
+
+    this.audioHost.append(
+      playable
+        ? player
+        : el('p', {
+            class: 'notice notice--warning',
+            text: 'This browser cannot play Ogg/Opus audio. Download the clip to listen to it.',
+          }),
+      el('div', { class: 'photo__meta' }, [
+        field('Audio', `${formatLocalTime(interval.start)} – ${formatLocalTime(interval.end)}`),
+        field('Length', `${Math.round(interval.end - interval.start)} s`),
+        peak !== undefined ? field('Peak', `${peak.toFixed(1)} dBFS`) : null,
+        field('Size', formatBytes(entry.size)),
+        el('a', {
+          class: 'photo__audio-link',
+          text: 'Download audio',
+          attrs: { href: entry.url, download: `home-${filenameStamp(clip.observed_at)}.ogg` },
+        }),
+      ]),
+    );
+  }
+
+  /** A detached <audio> keeps playing, so the player is paused before it goes. */
+  private stopAudio(): void {
+    for (const player of this.audioHost.querySelectorAll('audio')) player.pause();
+  }
+
+  private clearAudio(): void {
+    this.stopAudio();
+    clear(this.audioHost);
   }
 
   /** Warm the cache in both directions so stepping does not wait on the network. */

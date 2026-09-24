@@ -1,6 +1,6 @@
 /** Types for API v1 of the monitoring Worker, mirroring cloud/openapi.json. */
 
-export type EventKind = 'measurement' | 'photo';
+export type EventKind = 'measurement' | 'photo' | 'audio';
 export type EventStatus = 'ok' | 'error';
 
 /** An event as returned by the read endpoints. Times are Unix seconds UTC. */

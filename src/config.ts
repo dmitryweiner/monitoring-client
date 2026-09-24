@@ -23,10 +23,18 @@ export const DEVICE_LATE_SECONDS = 60 * 60;
 export const MAX_PAGE_LIMIT = 1000;
 export const MAX_PAGES = 8;
 
+/**
+ * The photo timeline lists a whole range at once. In attention mode the agent
+ * takes a photo a minute, up to 1440 a day, so 30 days can reach 43 200
+ * photos; this cap covers that.
+ */
+export const TIMELINE_MAX_PAGES = 50;
+
 /** localStorage keys. */
 export const SESSION_STORAGE_KEY = 'monitor.session';
 export const HIDDEN_SERIES_STORAGE_KEY = 'monitor.hiddenSeries';
 export const RANGE_STORAGE_KEY = 'monitor.range';
 export const CHART_MODE_STORAGE_KEY = 'monitor.chartMode';
+export const PHOTO_RANGE_STORAGE_KEY = 'monitor.photoRange';
 
 export const SECONDS_PER_DAY = 86_400;

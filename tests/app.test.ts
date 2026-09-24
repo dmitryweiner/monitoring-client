@@ -84,8 +84,29 @@ function sameDayEarlier(timestamp: number, seconds: number): number {
   return timestamp - Math.min(seconds, (timestamp - midnight.getTime() / 1000) / 2);
 }
 
-const NEW_PHOTO = { ...photo(NOW - 40), source: 'camera' };
+const NEW_PHOTO = {
+  ...photo(NOW - 40),
+  source: 'camera',
+  values: { attention: 1, changed_percent: 23.4 },
+};
 const OLD_PHOTO = { ...photo(sameDayEarlier(NOW - 40, 14_400)), source: 'acceptance' };
+
+/** The minute recorded around the newest photo, which starts a few seconds after it. */
+const CLIP: StoredEvent = {
+  ...photo(NOW - 37),
+  event_id: 'a-clip',
+  kind: 'audio',
+  source: 'microphone',
+  values: { duration_seconds: 60, peak_dbfs: -18.5 },
+};
+/** The acceptance run's test tone, which the viewer does not pair with photos. */
+const TONE: StoredEvent = {
+  ...CLIP,
+  event_id: 'a-tone',
+  observed_at: OLD_PHOTO.observed_at,
+  source: 'acceptance',
+  values: { duration_seconds: 3, peak_dbfs: -6 },
+};
 
 const LATEST = {
   device_id: 'home',
@@ -145,6 +166,21 @@ function makeFetch() {
         headers: { 'Content-Type': 'application/json' },
       });
     }
+    if (request.path === '/v1/audio') {
+      const start = Number(request.query.get('start'));
+      const end = Number(request.query.get('end'));
+      const items = [TONE, CLIP].filter(
+        (item) => item.observed_at >= start && item.observed_at <= end,
+      );
+      return new Response(JSON.stringify({ items, next_cursor: null }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    if (request.path.startsWith('/v1/audio/')) {
+      return new Response(new Blob([new Uint8Array([0x4f, 0x67, 0x67, 0x53])]), {
+        headers: { 'Content-Type': 'audio/ogg' },
+      });
+    }
     if (request.path.startsWith('/v1/photos/')) {
       return new Response(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])]), {
         headers: { 'Content-Type': 'image/jpeg' },
@@ -192,6 +228,8 @@ beforeEach(() => {
   window.localStorage.clear();
   globalThis.URL.createObjectURL = () => 'blob:fake';
   globalThis.URL.revokeObjectURL = () => undefined;
+  // happy-dom plays nothing; the viewer asks before offering the player.
+  HTMLMediaElement.prototype.canPlayType = () => 'probably';
 });
 
 afterEach(() => {
@@ -459,6 +497,85 @@ describe('photo viewer', () => {
     expect(input.min).not.toBe('');
     expect(input.max).not.toBe('');
     expect(input.min < input.max).toBe(true);
+  });
+});
+
+describe('photo timeline and audio', () => {
+  it('offers the chart ranges that photo retention allows', async () => {
+    window.location.hash = '#/photos';
+    const { root } = mount(true);
+    await settle(20);
+
+    const chips = [...root.querySelectorAll<HTMLButtonElement>('.chip')].map(
+      (chip) => chip.textContent,
+    );
+    expect(chips).toEqual([
+      'Last hour',
+      'Last 6 hours',
+      'Last 24 hours',
+      'Last 7 days',
+      'Last 30 days',
+    ]);
+    expect(root.querySelector('.chip[aria-pressed="true"]')?.textContent).toBe('Last 24 hours');
+  });
+
+  it('draws the photos, the audio and the photo on screen', async () => {
+    window.location.hash = '#/photos';
+    const { root } = mount(true);
+    await settle(20);
+
+    expect(root.querySelectorAll('.timeline__photo').length).toBeGreaterThan(0);
+    expect(root.querySelectorAll('.timeline__photo--attention')).toHaveLength(1);
+    // The acceptance tone is left out.
+    expect(root.querySelectorAll('.timeline__audio')).toHaveLength(1);
+    expect(root.querySelector('.timeline__current')?.getAttribute('visibility')).toBe('visible');
+    expect(root.textContent).toContain('2 photos · 1 in attention mode · 1 audio clip');
+  });
+
+  it('plays the clip recorded around the photo, under it', async () => {
+    window.location.hash = '#/photos';
+    const { root, seen } = mount(true);
+    await settle(30);
+
+    const player = root.querySelector<HTMLAudioElement>('.photo__audio audio');
+    expect(player?.getAttribute('src')).toBe('blob:fake');
+    expect(player?.hasAttribute('controls')).toBe(true);
+    expect(seen.map((request) => request.path)).toContain(`/v1/audio/${CLIP.event_id}`);
+    expect(root.textContent).toContain('-18.5 dBFS');
+    expect(root.textContent).toContain('Mode attention');
+    // The frame comes first, then the audio, then the photo details.
+    const order = [...root.querySelector('.photo')!.children].map((child) => child.className);
+    expect(order.indexOf('photo__audio')).toBe(order.indexOf('photo__frame') + 1);
+  });
+
+  it('offers a download where the browser cannot play Ogg/Opus', async () => {
+    HTMLMediaElement.prototype.canPlayType = () => '';
+    window.location.hash = '#/photos';
+    const { root } = mount(true);
+    await settle(30);
+
+    expect(root.querySelector('.photo__audio audio')).toBeNull();
+    expect(root.textContent).toContain('cannot play Ogg/Opus');
+    expect(root.querySelector('.photo__audio a[download]')).not.toBeNull();
+  });
+
+  it('opens the photo nearest the point clicked on the ruler', async () => {
+    window.location.hash = '#/photos';
+    const { root, seen } = mount(true);
+    await settle(30);
+    expect(root.textContent).toContain('2 of 2');
+
+    const ruler = root.querySelector<SVGSVGElement>('.timeline__ruler')!;
+    ruler.getBoundingClientRect = () => ({ left: 0, width: 1000 }) as DOMRect;
+    // The default range is the last 24 hours; click a tenth of the way along,
+    // well before either photo, so the older one is the nearest.
+    ruler.dispatchEvent(new MouseEvent('click', { clientX: 100, bubbles: true }));
+    await settle(30);
+
+    expect(root.textContent).toContain('1 of 2');
+    expect(seen.map((request) => request.path)).toContain(`/v1/photos/${OLD_PHOTO.event_id}`);
+    // The older photo has no clip beside it, the acceptance tone does not count.
+    expect(root.querySelector('.photo__audio audio')).toBeNull();
   });
 });
 

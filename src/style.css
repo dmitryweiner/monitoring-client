@@ -608,6 +608,124 @@ thead th {
   font-variant-numeric: tabular-nums;
 }
 
+/* The clip recorded around the photo, directly under it. */
+.photo__audio {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.photo__audio:empty {
+  display: none;
+}
+
+.photo__player {
+  width: 100%;
+}
+
+.photo__audio-link {
+  color: var(--series-1);
+}
+
+/* ---------- photo timeline ---------- */
+
+.timeline__ruler {
+  display: block;
+  overflow: visible;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.timeline__surface {
+  fill: transparent;
+}
+
+.timeline__photo {
+  fill: var(--series-1);
+}
+
+.timeline__photo--attention {
+  fill: var(--series-2);
+}
+
+.timeline__audio {
+  fill: var(--series-3);
+}
+
+.timeline__axis {
+  stroke: var(--axis);
+  stroke-width: 1;
+}
+
+.timeline__label {
+  fill: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline__label--day {
+  fill: var(--text-primary);
+  font-weight: 600;
+}
+
+.timeline__current {
+  stroke: var(--text-primary);
+  stroke-width: 2;
+}
+
+.timeline__hover {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+
+/* Marks and labels do not take the pointer, so a click anywhere reads its time. */
+.timeline__ruler > g,
+.timeline__hover,
+.timeline__current {
+  pointer-events: none;
+}
+
+.timeline__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.timeline__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timeline__key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.timeline__key--photo {
+  background: var(--series-1);
+}
+
+.timeline__key--attention {
+  background: var(--series-2);
+}
+
+.timeline__key--audio {
+  background: var(--series-3);
+}
+
+.timeline__readout {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- login ---------- */
 
 .login {

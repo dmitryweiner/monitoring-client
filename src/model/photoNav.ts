@@ -2,9 +2,9 @@
  * Navigation across the photo archive.
  *
  * The API lists photos in ascending order with a cursor, and there is no
- * "newest first" mode, so the viewer works from per-day listings: at most 144
- * photos a day, one request each, cached. Moving past the edge of a day loads
- * the neighbouring day and skips days with no photos.
+ * "newest first" mode, so the viewer works from per-day listings: 144 photos a
+ * day, up to 1440 in attention mode, two requests at most, cached. Moving past
+ * the edge of a day loads the neighbouring day and skips days with no photos.
  */
 
 import type { StoredEvent } from '../api/types.ts';

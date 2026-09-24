@@ -13,6 +13,8 @@ function contentSecurityPolicy(): Plugin {
     "script-src 'self'",
     "style-src 'self'",
     "img-src 'self' blob: data:",
+    // Audio clips reach the player as blob URLs, like the photos.
+    'media-src blob:',
     "font-src 'self'",
     `connect-src 'self' ${WORKER_URL}`,
     "base-uri 'none'",

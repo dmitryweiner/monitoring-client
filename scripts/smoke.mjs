@@ -73,6 +73,13 @@ const oldPhoto = {
   event_id: 'photo-old',
 };
 
+// The minute of audio recorded around the newest photo.
+const clip = {
+  ...measurement('microphone', { duration_seconds: 60, peak_dbfs: -18.5 }, 37),
+  kind: 'audio',
+  event_id: 'clip-new',
+};
+
 const latest = {
   device_id: 'home',
   last_seen: NOW - 30,
@@ -175,6 +182,19 @@ function makeWindow(hash, session) {
           (item) => item.observed_at >= start && item.observed_at <= end,
         ),
         next_cursor: null,
+      });
+    }
+    if (url.pathname === '/v1/audio') {
+      const start = Number(url.searchParams.get('start'));
+      const end = Number(url.searchParams.get('end'));
+      return json({
+        items: [clip].filter((item) => item.observed_at >= start && item.observed_at <= end),
+        next_cursor: null,
+      });
+    }
+    if (url.pathname.startsWith('/v1/audio/')) {
+      return new window.Response(new window.Blob([new Uint8Array([79, 103, 103, 83])]), {
+        headers: { 'Content-Type': 'audio/ogg' },
       });
     }
     if (url.pathname.startsWith('/v1/photos/')) {
@@ -390,6 +410,25 @@ const settle = async (rounds = 60) => {
   );
   const dateInput = root.querySelector('input[type="date"]');
   check('date picker bounded to the archive', Boolean(dateInput?.min && dateInput?.max));
+  check(
+    'timeline draws photos and audio',
+    root.querySelectorAll('.timeline__photo').length > 0 &&
+      root.querySelectorAll('.timeline__audio').length === 1,
+  );
+  check(
+    'timeline marks the photo on screen',
+    root.querySelector('.timeline__current')?.getAttribute('visibility') === 'visible',
+  );
+  check(
+    'audio clip fetched for the photo',
+    calls.some((call) => call.startsWith('/v1/audio/clip-new')),
+    calls.filter((call) => call.startsWith('/v1/audio')).join(', '),
+  );
+  // happy-dom cannot decode Ogg/Opus, so it gets the player or the download fallback.
+  check(
+    'audio shown under the photo',
+    root.querySelector('.photo__audio a[download]')?.getAttribute('href') === 'blob:smoke',
+  );
   check('no error in the viewer', errors.length === 0, errors.slice(0, 2).join(' | '));
 
   restoreConsole();

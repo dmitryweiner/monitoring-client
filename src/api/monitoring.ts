@@ -16,6 +16,8 @@ export interface HistoryQuery {
   source?: string | undefined;
   limit?: number | undefined;
   signal?: AbortSignal | undefined;
+  /** Cap on pages followed by the all* helpers; MAX_PAGES when absent. */
+  maxPages?: number | undefined;
 }
 
 export interface AggregateQuery {
@@ -62,6 +64,10 @@ export class MonitoringApi {
     return this.page('/v1/photos', query, cursor);
   }
 
+  audio(query: HistoryQuery, cursor?: string): Promise<EventPage> {
+    return this.page('/v1/audio', query, cursor);
+  }
+
   aggregate(query: AggregateQuery): Promise<AggregateResponse> {
     return this.client.requestJson<AggregateResponse>('/v1/measurements/aggregate', {
       query: {
@@ -82,13 +88,24 @@ export class MonitoringApi {
     });
   }
 
+  /** Fetch the private Ogg/Opus clip, for the same reason as photoBlob. */
+  audioBlob(eventId: string, signal?: AbortSignal): Promise<Blob> {
+    return this.client.requestBlob(`/v1/audio/${encodeURIComponent(eventId)}`, {
+      ...(signal ? { signal } : {}),
+    });
+  }
+
   /** Follow next_cursor until the range is exhausted or MAX_PAGES is reached. */
   async allMeasurements(query: HistoryQuery): Promise<StoredEvent[]> {
-    return this.allPages((cursor) => this.measurements(query, cursor));
+    return this.allPages((cursor) => this.measurements(query, cursor), query.maxPages);
   }
 
   async allPhotos(query: HistoryQuery): Promise<StoredEvent[]> {
-    return this.allPages((cursor) => this.photos(query, cursor));
+    return this.allPages((cursor) => this.photos(query, cursor), query.maxPages);
+  }
+
+  async allAudio(query: HistoryQuery): Promise<StoredEvent[]> {
+    return this.allPages((cursor) => this.audio(query, cursor), query.maxPages);
   }
 
   private page(path: string, query: HistoryQuery, cursor?: string): Promise<EventPage> {
@@ -106,11 +123,12 @@ export class MonitoringApi {
 
   private async allPages(
     fetchPage: (cursor?: string) => Promise<EventPage>,
+    maxPages = MAX_PAGES,
   ): Promise<StoredEvent[]> {
     const items: StoredEvent[] = [];
     let cursor: string | undefined;
     // A hard cap keeps a server-side paging bug from looping forever.
-    for (let page = 0; page < MAX_PAGES; page += 1) {
+    for (let page = 0; page < maxPages; page += 1) {
       const result = await fetchPage(cursor);
       items.push(...result.items);
       if (!result.next_cursor) return items;
