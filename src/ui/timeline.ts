@@ -1,7 +1,7 @@
 /**
  * The ruler above the photo viewer.
  *
- * A time axis for the chosen range with a mark wherever photos were taken,
+ * A time axis for the range chosen above it, with a mark wherever photos were taken,
  * attention-mode photos set apart, a band for every stretch with recorded
  * audio, and a line at the photo on screen. Clicking the ruler opens the photo
  * nearest to that moment.
@@ -11,11 +11,10 @@
  * a few hundred elements whatever the range.
  */
 
-import { PHOTO_RANGE_STORAGE_KEY, TIMELINE_MAX_PAGES } from '../config.ts';
+import { TIMELINE_MAX_PAGES } from '../config.ts';
 import type { StoredEvent } from '../api/types.ts';
-import { clampRange, presetRange, type RangeId, type TimeRange } from '../model/range.ts';
+import type { TimeRange } from '../model/range.ts';
 import {
-  PHOTO_RANGE_PRESETS,
   axisTicks,
   binPhotos,
   fraction,
@@ -26,8 +25,6 @@ import {
 import { describeError, isAbort, type AppContext } from './context.ts';
 import { clear, el } from './dom.ts';
 import { formatLocal, formatLocalDay, formatLocalTime } from './format.ts';
-
-const DEFAULT_RANGE_ID: RangeId = '24h';
 
 /** Slices of the range that photos are grouped into, one mark each. */
 const PHOTO_BINS = 400;
@@ -56,25 +53,6 @@ function percent(share: number): string {
   return `${(share * 100).toFixed(3)}%`;
 }
 
-function readStoredRange(): RangeId {
-  try {
-    const stored = globalThis.localStorage?.getItem(PHOTO_RANGE_STORAGE_KEY);
-    const preset = PHOTO_RANGE_PRESETS.find((item) => item.id === stored);
-    return preset ? preset.id : DEFAULT_RANGE_ID;
-  } catch {
-    // A remembered range is a convenience; the default is always valid.
-    return DEFAULT_RANGE_ID;
-  }
-}
-
-function persistRange(id: RangeId): void {
-  try {
-    globalThis.localStorage?.setItem(PHOTO_RANGE_STORAGE_KEY, id);
-  } catch {
-    // As above.
-  }
-}
-
 export interface TimelineOptions {
   /** Open a photo the reader picked on the ruler. */
   onPick: (photo: StoredEvent) => void;
@@ -82,9 +60,8 @@ export interface TimelineOptions {
 
 export class Timeline {
   readonly element: HTMLElement;
-
-  private readonly rangeRow = el('div', { class: 'filters__row filters__block' });
-  private readonly summary = el('span', { class: 'stat__note' });
+  /** What the loaded range holds; the page places it beside its Refresh button. */
+  readonly summary = el('span', { class: 'stat__note' });
   private readonly readout = el('span', { class: 'timeline__readout' });
   private readonly ruler = svg('svg', {
     class: 'timeline__ruler',
@@ -106,9 +83,6 @@ export class Timeline {
     y2: 44,
     visibility: 'hidden',
   });
-  private readonly rulerBlock: HTMLElement;
-
-  private rangeId: RangeId = readStoredRange();
   private range: TimeRange | null = null;
   private photos: StoredEvent[] = [];
   private current: StoredEvent | null = null;
@@ -131,7 +105,7 @@ export class Timeline {
     this.ruler.addEventListener('pointermove', (event) => this.hover(event));
     this.ruler.addEventListener('pointerleave', () => this.endHover());
 
-    this.rulerBlock = el('div', { class: 'filters__block timeline' }, [
+    this.element = el('div', { class: 'filters__block timeline' }, [
       this.ruler,
       el('div', { class: 'timeline__legend' }, [
         this.legendKey('timeline__key--photo', 'Photo'),
@@ -140,9 +114,6 @@ export class Timeline {
         this.readout,
       ]),
     ]);
-
-    this.element = el('div', { class: 'filters filters--stack' }, [this.rangeRow, this.rulerBlock]);
-    this.renderRangeRow();
   }
 
   destroy(): void {
@@ -162,44 +133,12 @@ export class Timeline {
     ]);
   }
 
-  private renderRangeRow(): void {
-    clear(this.rangeRow);
-    const group = el('div', { class: 'filters__group' });
-    for (const preset of PHOTO_RANGE_PRESETS) {
-      group.append(
-        el('button', {
-          class: 'chip',
-          text: preset.label,
-          attrs: { type: 'button', 'aria-pressed': String(preset.id === this.rangeId) },
-          on: {
-            click: () => {
-              // Picking the current range again reloads it, to take in new photos.
-              this.rangeId = preset.id;
-              persistRange(preset.id);
-              this.renderRangeRow();
-              void this.load();
-            },
-          },
-        }),
-      );
-    }
-    this.rangeRow.append(
-      el('span', { class: 'filters__label', text: 'Range' }),
-      group,
-      this.summary,
-    );
-  }
-
-  async load(): Promise<void> {
+  async load(range: TimeRange): Promise<void> {
     this.controller?.abort();
     const controller = new AbortController();
     this.controller = controller;
-    this.rulerBlock.classList.add('is-refetching');
+    this.element.classList.add('is-refetching');
 
-    const preset =
-      PHOTO_RANGE_PRESETS.find((item) => item.id === this.rangeId) ?? PHOTO_RANGE_PRESETS[0]!;
-    const now = Date.now() / 1000;
-    const range = clampRange(presetRange(preset, now), 'photo', now);
     const query = { ...range, signal: controller.signal, maxPages: TIMELINE_MAX_PAGES };
 
     try {
@@ -215,7 +154,7 @@ export class Timeline {
       if (isAbort(error) || controller.signal.aborted) return;
       this.context.notify(describeError(error), 'error');
     } finally {
-      if (this.controller === controller) this.rulerBlock.classList.remove('is-refetching');
+      if (this.controller === controller) this.element.classList.remove('is-refetching');
     }
   }
 
@@ -228,6 +167,7 @@ export class Timeline {
     const parts = [`${this.photos.length} photo${this.photos.length === 1 ? '' : 's'}`];
     if (attention > 0) parts.push(`${attention} in attention mode`);
     parts.push(`${clips.length} audio clip${clips.length === 1 ? '' : 's'}`);
+    parts.push(`${formatLocal(range.start)} → ${formatLocal(range.end)}`);
     this.summary.textContent = parts.join(' · ');
 
     // Audio runs along the top.

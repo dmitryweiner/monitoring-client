@@ -20,12 +20,8 @@ import type { AggregateResponse } from '../api/types.ts';
 import {
   DEFAULT_RANGE_ID,
   RANGE_PRESETS,
-  type RangeId,
   chooseBucketSeconds,
   chooseMode,
-  clampRange,
-  findPreset,
-  presetRange,
 } from '../model/range.ts';
 import {
   MAX_COMBINED_SERIES,
@@ -41,6 +37,7 @@ import { renderChart, seriesColor, type ChartPanel } from './chart.ts';
 import { describeError, isAbort, type AppContext, type View } from './context.ts';
 import { clear, el } from './dom.ts';
 import { formatLocal } from './format.ts';
+import { RangePicker } from './rangePicker.ts';
 
 /** How much of a delivery gap draws as a break rather than a straight line. */
 const GAP_FACTOR = 2.5;
@@ -67,11 +64,6 @@ function persist(key: string, value: string): void {
   }
 }
 
-function readStoredRange(): RangeId {
-  const stored = readStored(RANGE_STORAGE_KEY);
-  return stored && findPreset(stored) ? (stored as RangeId) : DEFAULT_RANGE_ID;
-}
-
 function readStoredLayout(): ChartLayout {
   const stored = readStored(CHART_MODE_STORAGE_KEY);
   return stored === 'combined' || stored === 'separate' ? stored : DEFAULT_LAYOUT;
@@ -96,13 +88,18 @@ export class ChartView implements View {
   private readonly filters = el('div', { class: 'filters filters--stack' });
   private readonly actionRow = el('div', { class: 'filters__row' });
   private readonly layoutRow = el('div', { class: 'filters__row filters__block' });
-  private readonly rangeRow = el('div', { class: 'filters__row filters__block' });
+  private readonly rangePicker = new RangePicker({
+    presets: RANGE_PRESETS,
+    defaultId: DEFAULT_RANGE_ID,
+    storageKey: RANGE_STORAGE_KEY,
+    kind: 'measurement',
+    onChange: () => void this.load(),
+  });
   private readonly seriesRow = el('div', { class: 'filters__row filters__block' });
   private readonly summary = el('span', { class: 'stat__note' });
   private readonly panelHost = el('div', {});
   private readonly hidden = readHiddenSeries();
 
-  private rangeId: RangeId = readStoredRange();
   private layout: ChartLayout = readStoredLayout();
   private data: ChartData | null = null;
   private range: { start: number; end: number } | null = null;
@@ -110,10 +107,9 @@ export class ChartView implements View {
   private controller: AbortController | null = null;
 
   constructor(private readonly context: AppContext) {
-    this.filters.append(this.actionRow, this.layoutRow, this.rangeRow, this.seriesRow);
+    this.filters.append(this.actionRow, this.layoutRow, this.rangePicker.element, this.seriesRow);
     this.element = el('section', {}, [this.filters, this.panelHost]);
     this.renderActionRow();
-    this.renderRangeRow();
     this.renderLayoutRow();
   }
 
@@ -152,24 +148,6 @@ export class ChartView implements View {
       attrs: { type: 'button', 'aria-pressed': String(pressed) },
       on: { click: onClick },
     });
-  }
-
-  /** Time range. Changing it refetches. */
-  private renderRangeRow(): void {
-    clear(this.rangeRow);
-    const group = el('div', { class: 'filters__group' });
-    for (const preset of RANGE_PRESETS) {
-      group.append(
-        this.chip(preset.label, preset.id === this.rangeId, () => {
-          if (this.rangeId === preset.id) return;
-          this.rangeId = preset.id;
-          persist(RANGE_STORAGE_KEY, preset.id);
-          this.renderRangeRow();
-          void this.load();
-        }),
-      );
-    }
-    this.rangeRow.append(el('span', { class: 'filters__label', text: 'Range' }), group);
   }
 
   /** One plot or one per unit. Changing it only redraws what is already loaded. */
@@ -270,9 +248,7 @@ export class ChartView implements View {
     this.controller = controller;
     this.panelHost.classList.add('is-refetching');
 
-    const preset = findPreset(this.rangeId) ?? RANGE_PRESETS[0]!;
-    const now = Date.now() / 1000;
-    const range = clampRange(presetRange(preset, now), 'measurement', now);
+    const range = this.rangePicker.range();
 
     try {
       const data =

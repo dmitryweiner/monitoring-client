@@ -57,6 +57,36 @@ export function presetRange(preset: RangePreset, nowSeconds: number): TimeRange 
   return { start: nowSeconds - preset.seconds, end: nowSeconds };
 }
 
+/**
+ * A preset's window moved back by whole windows. `steps` 0 is the live window
+ * ending now. Earlier windows count back from `anchor`, the moment the reader
+ * first stepped away from the live one, so stepping back and forth lands on
+ * the same adjacent windows however much time passes between clicks.
+ */
+export function steppedRange(
+  seconds: number,
+  steps: number,
+  anchor: number,
+  nowSeconds: number,
+): TimeRange {
+  const end = steps === 0 ? nowSeconds : anchor - steps * seconds;
+  return { start: end - seconds, end };
+}
+
+/** Whether the window one step further back still overlaps retained data. */
+export function canStepBack(
+  seconds: number,
+  steps: number,
+  anchor: number,
+  kind: 'measurement' | 'photo',
+  nowSeconds: number,
+): boolean {
+  const retentionDays = kind === 'photo' ? PHOTO_RETENTION_DAYS : MEASUREMENT_RETENTION_DAYS;
+  const earliest = nowSeconds - retentionDays * SECONDS_PER_DAY;
+  const from = steps === 0 ? nowSeconds : anchor;
+  return steppedRange(seconds, steps + 1, from, nowSeconds).end > earliest;
+}
+
 /** Clamp a range to what the API will accept for the given kind of event. */
 export function clampRange(
   range: TimeRange,

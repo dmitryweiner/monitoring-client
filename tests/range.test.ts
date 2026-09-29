@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   BUCKET_LADDER,
   MAX_BUCKETS,
+  canStepBack,
+  steppedRange,
   MAX_SPAN_SECONDS,
   RANGE_PRESETS,
   chooseBucketSeconds,
@@ -116,5 +118,41 @@ describe('local day helpers', () => {
     expect(shiftDayKey('2026-03-01', -1)).toBe('2026-02-28');
     expect(shiftDayKey('2026-02-28', 1)).toBe('2026-03-01');
     expect(shiftDayKey('2026-12-31', 1)).toBe('2027-01-01');
+  });
+});
+
+describe('stepping through windows', () => {
+  const HOUR = 3600;
+
+  it('is the live window at step 0, whatever the anchor', () => {
+    expect(steppedRange(DAY, 0, NOW - 999, NOW)).toEqual({ start: NOW - DAY, end: NOW });
+  });
+
+  it('lays earlier windows end to end back from the anchor', () => {
+    const anchor = NOW - 30;
+    expect(steppedRange(DAY, 1, anchor, NOW)).toEqual({
+      start: anchor - 2 * DAY,
+      end: anchor - DAY,
+    });
+    expect(steppedRange(DAY, 2, anchor, NOW)).toEqual({
+      start: anchor - 3 * DAY,
+      end: anchor - 2 * DAY,
+    });
+    // Later clicks do not shift a window that has already been shown.
+    expect(steppedRange(DAY, 1, anchor, NOW + 5000)).toEqual(steppedRange(DAY, 1, anchor, NOW));
+  });
+
+  it('stops once the next window would hold nothing retained', () => {
+    // Photos: 30 days. The last 30 days is already all of it.
+    expect(canStepBack(30 * DAY, 0, NOW, 'photo', NOW)).toBe(false);
+    expect(canStepBack(7 * DAY, 0, NOW, 'photo', NOW)).toBe(true);
+    // Four weeks back is day 28 to 35: partly retained, so allowed; five is not.
+    expect(canStepBack(7 * DAY, 3, NOW, 'photo', NOW)).toBe(true);
+    expect(canStepBack(7 * DAY, 4, NOW, 'photo', NOW)).toBe(false);
+    // Measurements: 90 days.
+    expect(canStepBack(90 * DAY, 0, NOW, 'measurement', NOW)).toBe(false);
+    expect(canStepBack(30 * DAY, 1, NOW, 'measurement', NOW)).toBe(true);
+    expect(canStepBack(30 * DAY, 2, NOW, 'measurement', NOW)).toBe(false);
+    expect(canStepBack(HOUR, 0, NOW, 'measurement', NOW)).toBe(true);
   });
 });

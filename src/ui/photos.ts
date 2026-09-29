@@ -7,16 +7,16 @@
  * blobs makes stepping back and forth instant.
  *
  * Above the viewer a timeline shows where photos and audio clips fall in the
- * chosen range. Below the photo sits the audio clip recorded around it, when
- * there is one, in the browser's own player; the clip is private as well and
- * reaches the player the same way as the JPEG.
+ * chosen range. At the bottom, under the photo and its details, sits the audio
+ * clip recorded around it, when there is one, in the browser's own player; the
+ * clip is private as well and reaches the player the same way as the JPEG.
  */
 
-import { PHOTO_RETENTION_DAYS, SECONDS_PER_DAY } from '../config.ts';
+import { PHOTO_RANGE_STORAGE_KEY, PHOTO_RETENTION_DAYS, SECONDS_PER_DAY } from '../config.ts';
 import type { StoredEvent } from '../api/types.ts';
 import { PhotoNavigator, newestPhoto } from '../model/photoNav.ts';
 import { dayKeyToTimestamp, localDayKey, localDayRange } from '../model/range.ts';
-import { audioForPhoto, clipInterval } from '../model/timeline.ts';
+import { PHOTO_RANGE_PRESETS, audioForPhoto, clipInterval } from '../model/timeline.ts';
 import { describeError, isAbort, type AppContext, type View } from './context.ts';
 import { clear, el, field } from './dom.ts';
 import {
@@ -27,6 +27,7 @@ import {
   formatLocalTime,
   formatUtc,
 } from './format.ts';
+import { RangePicker } from './rangePicker.ts';
 import { Timeline } from './timeline.ts';
 
 /** Recently viewed photos kept decoded, so previous/next does not refetch. */
@@ -104,6 +105,7 @@ export class PhotosView implements View {
   private readonly cache: BlobCache;
   private readonly audioCache: BlobCache;
   private readonly timeline: Timeline;
+  private readonly rangePicker: RangePicker;
   /** Audio clips per local day, loaded when a photo of that day is shown. */
   private readonly clipDays = new Map<string, StoredEvent[]>();
   private controller: AbortController | null = null;
@@ -123,6 +125,13 @@ export class PhotosView implements View {
     this.timeline = new Timeline(context, {
       onPick: (photo) => void this.go(() => this.navigator.select(photo)),
     });
+    this.rangePicker = new RangePicker({
+      presets: PHOTO_RANGE_PRESETS,
+      defaultId: '24h',
+      storageKey: PHOTO_RANGE_STORAGE_KEY,
+      kind: 'photo',
+      onChange: () => void this.timeline.load(this.rangePicker.range()),
+    });
 
     this.newestButton = this.button('Newest', () => this.go(() => this.navigator.newest()));
     this.previousButton = this.button('← Previous', () => this.go(() => this.navigator.previous()));
@@ -130,9 +139,7 @@ export class PhotosView implements View {
     this.oldestButton = this.button('Oldest', () => this.go(() => this.navigator.oldest()));
     this.downloadButton = this.button('Download', () => void this.download());
 
-    const now = Date.now() / 1000;
-    this.dateInput.min = dateInputValue(now - PHOTO_RETENTION_DAYS * SECONDS_PER_DAY);
-    this.dateInput.max = dateInputValue(now);
+    this.updateDateBounds();
     this.dateInput.addEventListener('change', () => {
       const timestamp = dayKeyToTimestamp(this.dateInput.value);
       if (timestamp !== null) void this.go(() => this.navigator.jumpTo(timestamp));
@@ -149,13 +156,28 @@ export class PhotosView implements View {
       this.downloadButton,
     );
 
+    // Refresh and what is loaded, then the range and the ruler, as on the chart page.
+    const filters = el('div', { class: 'filters filters--stack' }, [
+      el('div', { class: 'filters__row' }, [
+        el('button', {
+          class: 'button button--primary',
+          text: 'Refresh',
+          attrs: { type: 'button' },
+          on: { click: () => this.refresh() },
+        }),
+        this.timeline.summary,
+      ]),
+      this.rangePicker.element,
+      this.timeline.element,
+    ]);
+
     this.element = el('section', { class: 'photo' }, [
       el('h2', { text: 'Camera archive' }),
-      this.timeline.element,
+      filters,
       this.navHost,
       this.frame,
-      this.audioHost,
       this.meta,
+      this.audioHost,
       el('p', {
         class: 'stat__note',
         text: `Photos and audio are kept for ${PHOTO_RETENTION_DAYS} days. Click the timeline to open the photo nearest that moment. Use the arrow keys to step, Home and End for the newest and oldest.`,
@@ -166,7 +188,27 @@ export class PhotosView implements View {
   mount(): void {
     document.addEventListener('keydown', this.onKeyDown);
     void this.go(() => this.start());
-    void this.timeline.load();
+    void this.timeline.load(this.rangePicker.range());
+  }
+
+  /**
+   * Take in what arrived since the page opened: the ruler, the per-day photo
+   * and clip listings, and the current photo's place in its day. The photo on
+   * screen stays; Next and Newest reach the new ones.
+   */
+  private refresh(): void {
+    this.navigator.invalidate();
+    this.clipDays.clear();
+    this.updateDateBounds();
+    void this.timeline.load(this.rangePicker.range());
+    const photo = this.navigator.photo;
+    void this.go(() => (photo ? this.navigator.select(photo) : this.start()));
+  }
+
+  private updateDateBounds(): void {
+    const now = Date.now() / 1000;
+    this.dateInput.min = dateInputValue(now - PHOTO_RETENTION_DAYS * SECONDS_PER_DAY);
+    this.dateInput.max = dateInputValue(now);
   }
 
   /**

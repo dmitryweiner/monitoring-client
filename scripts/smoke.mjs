@@ -429,6 +429,30 @@ const settle = async (rounds = 60) => {
     'audio shown under the photo',
     root.querySelector('.photo__audio a[download]')?.getAttribute('href') === 'blob:smoke',
   );
+  const order = [...root.querySelector('.photo').children].map((child) => child.className);
+  check(
+    'audio sits below the photo details',
+    order.indexOf('photo__audio') === order.indexOf('photo__meta') + 1 &&
+      order.indexOf('photo__meta') === order.indexOf('photo__frame') + 1,
+    order.join(', '),
+  );
+  const refresh = root.querySelector('.photo .filters__row button');
+  check('photo page offers Refresh', refresh?.textContent === 'Refresh');
+  const previousRange = root.querySelector('button[aria-label="Previous range"]');
+  const nextRange = root.querySelector('button[aria-label="Next range"]');
+  check(
+    'range steps offered, Next off on the live window',
+    Boolean(previousRange && !previousRange.disabled && nextRange?.disabled),
+  );
+  calls.length = 0;
+  previousRange.click();
+  await settle();
+  check(
+    'Previous range reloads the ruler',
+    calls.some((call) => call.startsWith('/v1/photos?')) &&
+      calls.some((call) => call.startsWith('/v1/audio?')),
+    calls.join(', '),
+  );
   check('no error in the viewer', errors.length === 0, errors.slice(0, 2).join(' | '));
 
   restoreConsole();

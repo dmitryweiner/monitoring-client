@@ -500,7 +500,143 @@ describe('photo viewer', () => {
   });
 });
 
+/** The range block's step buttons, found by their accessible names. */
+function stepButtons(root: HTMLElement) {
+  return {
+    previous: root.querySelector<HTMLButtonElement>('button[aria-label="Previous range"]')!,
+    next: root.querySelector<HTMLButtonElement>('button[aria-label="Next range"]')!,
+  };
+}
+
+/** The window of the most recent request to `path`. */
+function lastWindow(seen: Routed[], path: string): { start: number; end: number } {
+  const request = seen.filter((item) => item.path === path).at(-1)!;
+  return { start: Number(request.query.get('start')), end: Number(request.query.get('end')) };
+}
+
+describe('range stepping', () => {
+  it('steps the chart back by one window and forward to the live one', async () => {
+    window.location.hash = '#/chart';
+    const { root, seen } = mount(true);
+    await settle();
+
+    const buttons = stepButtons(root);
+    expect(buttons.previous.textContent).toBe('← Previous');
+    expect(buttons.previous.closest('.filters__row')?.textContent).toContain('Range');
+    // The live window is the newest; there is nothing after it.
+    expect(buttons.next.disabled).toBe(true);
+    const live = lastWindow(seen, '/v1/measurements');
+
+    buttons.previous.click();
+    await settle();
+    const earlier = lastWindow(seen, '/v1/measurements');
+    expect(earlier.end).toBeCloseTo(live.end - 86_400, -1);
+    expect(earlier.end - earlier.start).toBeCloseTo(86_400, 0);
+
+    buttons.previous.click();
+    await settle();
+    expect(lastWindow(seen, '/v1/measurements').end).toBeCloseTo(earlier.end - 86_400, 0);
+
+    // Two steps back, two forward: exactly the windows seen on the way back.
+    stepButtons(root).next.click();
+    await settle();
+    expect(lastWindow(seen, '/v1/measurements').end).toBeCloseTo(earlier.end, 0);
+    stepButtons(root).next.click();
+    await settle();
+    expect(lastWindow(seen, '/v1/measurements').end).toBeGreaterThan(earlier.end + 86_000);
+    expect(stepButtons(root).next.disabled).toBe(true);
+  });
+
+  it('returns to the live window when a range is chosen', async () => {
+    window.location.hash = '#/chart';
+    const { root, seen } = mount(true);
+    await settle();
+    stepButtons(root).previous.click();
+    await settle();
+    expect(stepButtons(root).next.disabled).toBe(false);
+
+    [...root.querySelectorAll<HTMLButtonElement>('.chip')]
+      .find((chip) => chip.textContent === 'Last 6 hours')!
+      .click();
+    await settle();
+    const window6h = lastWindow(seen, '/v1/measurements');
+    expect(window6h.end).toBeGreaterThan(NOW - 60);
+    expect(window6h.end - window6h.start).toBeCloseTo(6 * 3600, -1);
+    expect(stepButtons(root).next.disabled).toBe(true);
+  });
+
+  it('does not step past measurement retention', async () => {
+    window.location.hash = '#/chart';
+    const { root } = mount(true);
+    await settle();
+    [...root.querySelectorAll<HTMLButtonElement>('.chip')]
+      .find((chip) => chip.textContent === 'Last 90 days')!
+      .click();
+    await settle(20);
+    expect(stepButtons(root).previous.disabled).toBe(true);
+  });
+
+  it('steps the photo timeline and stops at photo retention', async () => {
+    window.location.hash = '#/photos';
+    const { root, seen } = mount(true);
+    await settle(20);
+    // The viewer lists whole days as well; stepping the range does not move it,
+    // so every request after the click is the ruler's.
+    seen.length = 0;
+
+    stepButtons(root).previous.click();
+    await settle(20);
+    for (const path of ['/v1/photos', '/v1/audio']) {
+      const requests = seen.filter((item) => item.path === path);
+      expect(requests).toHaveLength(1);
+      const window = lastWindow(requests, path);
+      expect(Math.abs(window.end - (NOW - 86_400))).toBeLessThan(60);
+      expect(window.end - window.start).toBeCloseTo(86_400, 0);
+    }
+    // Both photos are newer than this window, so the ruler is empty.
+    expect(root.querySelectorAll('.timeline__photo')).toHaveLength(0);
+    expect(root.textContent).toContain('No photos in this range');
+
+    [...root.querySelectorAll<HTMLButtonElement>('.chip')]
+      .find((chip) => chip.textContent === 'Last 30 days')!
+      .click();
+    await settle(20);
+    expect(stepButtons(root).previous.disabled).toBe(true);
+  });
+});
+
 describe('photo timeline and audio', () => {
+  it('puts Refresh above the range, as on the chart page', async () => {
+    window.location.hash = '#/photos';
+    const { root, seen } = mount(true);
+    await settle(30);
+
+    const rows = [...root.querySelectorAll<HTMLElement>('.photo .filters__row')];
+    const refresh = rows[0]!.querySelector('button')!;
+    expect(refresh.textContent).toBe('Refresh');
+    expect(refresh.classList.contains('button--primary')).toBe(true);
+    expect(rows[0]!.textContent).toContain('2 photos');
+    expect(rows[1]!.textContent).toContain('Range');
+
+    const before = {
+      photos: seen.filter((item) => item.path === '/v1/photos').length,
+      audio: seen.filter((item) => item.path === '/v1/audio').length,
+    };
+    refresh.click();
+    await settle(30);
+
+    // The ruler and the day listings are fetched again...
+    expect(seen.filter((item) => item.path === '/v1/photos').length).toBeGreaterThanOrEqual(
+      before.photos + 2,
+    );
+    expect(seen.filter((item) => item.path === '/v1/audio').length).toBeGreaterThanOrEqual(
+      before.audio + 2,
+    );
+    // ...and the photo on screen stays.
+    expect(root.textContent).toContain('2 of 2');
+    expect(root.querySelector('.photo__audio audio')).not.toBeNull();
+  });
+
   it('offers the chart ranges that photo retention allows', async () => {
     window.location.hash = '#/photos';
     const { root } = mount(true);
@@ -543,9 +679,13 @@ describe('photo timeline and audio', () => {
     expect(seen.map((request) => request.path)).toContain(`/v1/audio/${CLIP.event_id}`);
     expect(root.textContent).toContain('-18.5 dBFS');
     expect(root.textContent).toContain('Mode attention');
-    // The frame comes first, then the audio, then the photo details.
+    // The photo and its details come first; the player and its details sit below them.
     const order = [...root.querySelector('.photo')!.children].map((child) => child.className);
-    expect(order.indexOf('photo__audio')).toBe(order.indexOf('photo__frame') + 1);
+    expect(order.indexOf('photo__meta')).toBe(order.indexOf('photo__frame') + 1);
+    expect(order.indexOf('photo__audio')).toBe(order.indexOf('photo__meta') + 1);
+    const audio = root.querySelector('.photo__audio')!;
+    expect(audio.firstElementChild?.tagName).toBe('AUDIO');
+    expect(audio.lastElementChild?.textContent).toContain('dBFS');
   });
 
   it('offers a download where the browser cannot play Ogg/Opus', async () => {
